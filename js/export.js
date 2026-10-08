@@ -39,6 +39,11 @@ export function exportExcel(ctx) {
     ws['!cols'] = widths.map((wch) => ({ wch }));
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
+  add(ctx.standings.map((s) => ({
+    名次: s.rank, 隊伍: s.team.name, 積分: s.score, 出賽: s.played, 勝: s.wins, 敗: s.losses,
+    點數: `${s.rubbersWon} : ${s.rubbersLost}`, 局數: `${s.gamesWon} : ${s.gamesLost}`, 得失分: `${s.pointsWon} : ${s.pointsLost}`,
+    判定依據: s.drawTied && s.team.draw_rank == null ? `${s.basis}（未抽籤）` : s.basis,
+  })), '積分排名', [6, 12, 6, 6, 5, 5, 8, 8, 10, 20]);
   add(summary, '對戰結果', [8, 12, 12, 9, 12, 8, 20]);
   add(detail, '各點明細', [8, 26, 16, 16, 16, 7, 30, 12]);
   add(roster, '隊伍名單', [12, 60]);
@@ -47,6 +52,11 @@ export function exportExcel(ctx) {
 
 export function lineReport(ctx) {
   const lines = [`🏓 ${ctx.title} 戰報`, ''];
+  if (ctx.standings.some((s) => s.played)) {
+    lines.push('【積分排名】');
+    for (const s of ctx.standings) lines.push(`${s.rank}. ${s.team.name}　${s.score} 分（${s.wins} 勝 ${s.losses} 敗，點數 ${s.rubbersWon}:${s.rubbersLost}）`);
+    lines.push('');
+  }
   const rounds = [...new Set(ctx.matches.map((m) => m.round))].sort((x, y) => x - y);
   for (const round of rounds) {
     lines.push(`【第 ${round} 輪】`);

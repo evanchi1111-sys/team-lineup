@@ -21,8 +21,10 @@ insert into public.tl_settings (id) values (1) on conflict (id) do nothing;
 create table if not exists public.tl_teams (
   id         uuid primary key default gen_random_uuid(),
   name       text not null unique check (char_length(btrim(name)) between 1 and 10),
+  draw_rank  int check (draw_rank between 1 and 99),  -- 積分排名戰績完全相同時的抽籤順位
   created_at timestamptz not null default now()
 );
+alter table public.tl_teams add column if not exists draw_rank int check (draw_rank between 1 and 99);
 
 -- 隊伍密碼與錯誤次數（不開放給網頁讀取，只能透過下方的函式驗證）
 create table if not exists public.tl_team_secrets (

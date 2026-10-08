@@ -1,10 +1,11 @@
 import { ORGANIZER_EMAIL } from './config.js';
 import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js';
-import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin } from './rules.js';
+import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js';
 import { exportExcel, lineReport } from './export.js';
 
 const VIEWS = { board: '對戰看板', team: '各隊排點', admin: '主辦管理' };
 const ADMIN_TABS = { matches: '對戰與比分', teams: '隊伍與選手', settings: '設定與匯出' };
+const BOARD_TABS = { standings: '積分排名', matches: '對戰賽程' };
 
 const demo = new URLSearchParams(location.search).has('demo');
 const store = {
@@ -33,6 +34,7 @@ const state = {
   user: null,
   view: VIEWS[store.get('view')] ? store.get('view') : 'board',
   adminTab: ADMIN_TABS[store.get('adminTab')] ? store.get('adminTab') : 'matches',
+  boardTab: BOARD_TABS[store.get('boardTab')] ? store.get('boardTab') : 'standings',
   myTeam: store.get('myTeam', ''),
   team: savedTeam, // { id, code }：各隊排點登入（只存在這個分頁）
   teamData: null,
@@ -228,6 +230,49 @@ function matchHeader(m, mine) {
 
 // ---------------------------------------------------------------- 看板
 
+// 排名只計算已公布的對戰，主辦與選手看到的排名一致
+const standings = () => computeStandings(state.teams, state.matches.filter((m) => m.published));
+
+function renderStandings(mine) {
+  const rows = standings();
+  if (!rows.length) return emptyState('還沒有隊伍。');
+  const org = isOrganizer();
+  const needDraw = rows.some((s) => s.drawTied && s.team.draw_rank == null);
+  const medal = (s) => (s.played && s.rank <= 3 ? ['🥇', '🥈', '🥉'][s.rank - 1] : s.rank);
+  return `
+    ${needDraw && org ? `<div class="banner warn">有隊伍戰績完全相同，請抽籤後在「抽籤」欄填入順位。</div>` : ''}
+    <div class="table-wrap">
+      <table class="rank-table">
+        <thead><tr>
+          <th>名次</th><th class="left">隊伍</th><th>積分</th><th>勝</th><th>敗</th>
+          <th class="hide-sm">點數</th><th class="hide-sm">局數</th><th class="hide-sm">得失分</th><th class="left hide-sm">判定依據</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((s) => {
+            const basis = s.drawTied && s.team.draw_rank == null ? `${s.basis}（未抽籤）` : s.basis;
+            const draw = s.drawTied && org
+              ? `<label class="draw">抽籤 <select data-change="draw-rank" data-id="${s.team.id}" aria-label="${esc(s.team.name)} 抽籤順位">
+                   <option value="">—</option>
+                   ${rows.map((_, i) => `<option value="${i + 1}" ${s.team.draw_rank === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}
+                 </select></label>`
+              : '';
+            return `
+              <tr class="${s.team.id === mine ? 'mine' : ''}">
+                <td class="rank">${medal(s)}</td>
+                <td class="left"><div class="team">${esc(s.team.name)}</div><div class="basis show-sm">${esc(basis)}・點數 ${s.rubbersWon}:${s.rubbersLost}</div>${draw}</td>
+                <td><b>${s.score}</b></td><td>${s.wins}</td><td>${s.losses}</td>
+                <td class="hide-sm nowrap">${s.rubbersWon}:${s.rubbersLost}</td>
+                <td class="hide-sm nowrap">${s.gamesWon}:${s.gamesLost}</td>
+                <td class="hide-sm nowrap">${s.pointsWon}:${s.pointsLost}</td>
+                <td class="left hide-sm basis">${esc(basis)}</td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p class="note">積分：勝一場 2 分、敗一場 1 分。同積分時，兩隊看對戰勝負；三隊以上只計算彼此之間的對戰，依序比 場數勝率 → 點數勝率 → 局數勝率 → 分數勝率 → 抽籤。只計算已完賽的對戰。</p>`;
+}
+
 function renderBoard() {
   const matches = sortMatches(state.matches);
   if (!matches.length) return emptyState('主辦單位尚未公布對戰，開賽後這裡會自動更新。');
@@ -235,6 +280,10 @@ function renderBoard() {
   const done = matches.filter((m) => m.status === 'completed').length;
   const pct = Math.round((done / matches.length) * 100);
   const rounds = [...new Set(matches.map((m) => m.round))];
+  const tabs = `
+    <nav class="subtabs two" aria-label="看板內容">
+      ${Object.entries(BOARD_TABS).map(([key, label]) => `<button class="subtab ${state.boardTab === key ? 'on' : ''}" data-action="board-tab" data-tab="${key}" aria-pressed="${state.boardTab === key}">${label}</button>`).join('')}
+    </nav>`;
   return `
     <section class="card status">
       <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="賽事進度"><div class="progress-bar" style="width:${pct}%"></div></div>
@@ -247,16 +296,21 @@ function renderBoard() {
         </select>
       </div>
     </section>
-    ${rounds
-      .map((round) => `
-        <h3 class="round-title">第 ${round} 輪</h3>
-        <div class="match-grid">
-          ${matches
-            .filter((m) => m.round === round)
-            .map((m) => `<article class="match card ${m.status} ${mine && (m.team_a_id === mine || m.team_b_id === mine) ? 'mine' : ''}">${matchHeader(m, mine)}${pointTable(m)}</article>`)
-            .join('')}
-        </div>`)
-      .join('')}`;
+    ${tabs}
+    ${
+      state.boardTab === 'standings'
+        ? renderStandings(mine)
+        : rounds
+            .map((round) => `
+              <h3 class="round-title">第 ${round} 輪</h3>
+              <div class="match-grid">
+                ${matches
+                  .filter((m) => m.round === round)
+                  .map((m) => `<article class="match card ${m.status} ${mine && (m.team_a_id === mine || m.team_b_id === mine) ? 'mine' : ''}">${matchHeader(m, mine)}${pointTable(m)}</article>`)
+                  .join('')}
+              </div>`)
+            .join('')
+    }`;
 }
 
 // ---------------------------------------------------------------- 各隊排點
@@ -795,6 +849,7 @@ const exportCtx = () => ({
   title: state.settings.title,
   matches: sortMatches(state.matches),
   teams: state.teams,
+  standings: standings(),
   teamName,
   playersOf,
   playerNames,
@@ -821,6 +876,7 @@ function parseBulkTeams(text) {
 const actions = {
   retry: () => { state.error = null; render(); reload(); },
   view: ({ view }) => { state.view = view; store.set('view', view); render(); window.scrollTo(0, 0); },
+  'board-tab': ({ tab }) => { state.boardTab = tab; store.set('boardTab', tab); render(); },
   'admin-tab': ({ tab }) => { state.adminTab = tab; store.set('adminTab', tab); render(); if (tab === 'teams') reload(); },
   logout: async () => { await backend.signOut(); toast('已登出'); },
   'team-logout': () => { teamLogout(); render(); },
@@ -942,6 +998,10 @@ app.addEventListener('change', (e) => {
     state.myTeam = el.value;
     store.set('myTeam', el.value);
     render();
+  } else if (el.dataset.change === 'draw-rank') {
+    const rank = el.value ? Number(el.value) : null;
+    el.blur();
+    run(() => backend.adminSetDrawRank(el.dataset.id, rank), '抽籤順位已更新');
   } else if (el.dataset.change === 'slot') {
     const { match, point, idx } = el.dataset;
     const m = state.teamData.matches.find((x) => x.id === match);

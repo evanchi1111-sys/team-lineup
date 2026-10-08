@@ -119,6 +119,9 @@ async function createSupabaseBackend() {
     async adminDeleteTeam(id) {
       mustAffect(await sb.from('tl_teams').delete().eq('id', id).select());
     },
+    async adminSetDrawRank(id, rank) {
+      mustAffect(await sb.from('tl_teams').update({ draw_rank: rank }).eq('id', id).select());
+    },
     async adminAddPlayers(rows) {
       check(await sb.from('tl_players').insert(rows));
     },
@@ -310,6 +313,7 @@ function createDemoBackend() {
       delete db.secrets[id];
       emit();
     },
+    async adminSetDrawRank(id, rank) { requireOrganizer(); db.teams.find((t) => t.id === id).draw_rank = rank; emit(); },
     async adminAddPlayers(rows) {
       requireOrganizer();
       for (const r of rows) {

@@ -7,8 +7,9 @@
 - 排點規則自動檢查：最少登錄人數（可設定）、單打 1 人、雙打 2 人、同一位選手不能重複出賽
 - 隊伍密碼在伺服器驗證，連續輸錯 5 次鎖定 5 分鐘
 - 自動產生單循環賽程、手動新增對戰、公布／隱藏對戰
+- **積分排名表**：勝一場 2 分、敗一場 1 分；同積分時兩隊看對戰勝負，三隊以上只計算彼此之間的對戰，依序比 場數勝率 → 點數勝率 → 局數勝率 → 分數勝率 → 抽籤（主辦在排名表填入抽籤順位）
 - 每局記錄實際分數，自動判定每點與整場勝負
-- 匯出 Excel、複製 LINE 文字戰報
+- 匯出 Excel、複製 LINE 文字戰報（含積分排名）
 - 主辦帳號密碼登入（Supabase Authentication）
 
 純 HTML / JavaScript，不需要安裝或編譯，放上 GitHub Pages 就能用。資料庫、登入與即時同步使用 [Supabase](https://supabase.com)。
@@ -22,7 +23,7 @@
 ### 1. Supabase 專案
 可以和其他系統共用同一個 Supabase 專案（本系統的資料表都以 `tl_` 開頭，不會衝突）。
 
-1. **SQL Editor** → **New query** → 貼上 [`supabase/setup.sql`](supabase/setup.sql) 全部內容 → **Run**。
+1. **SQL Editor** → **New query** → 貼上 [`supabase/setup.sql`](supabase/setup.sql) 全部內容 → **Run**。（2026-10-08 以前建立的專案，另外執行一次 [`supabase/upgrade-01-draw-rank.sql`](supabase/upgrade-01-draw-rank.sql)）
 2. 主辦帳號：**Authentication** → **Users** 需有 `organizer@dsc-table-tennis.app`（或你在 `setup.sql` 第 7 段、`js/config.js` 設定的 email）。
 3. [`js/config.js`](js/config.js) 填入 Project URL 與 publishable（anon）key。
 
