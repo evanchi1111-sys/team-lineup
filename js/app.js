@@ -270,7 +270,39 @@ function renderStandings(mine) {
         </tbody>
       </table>
     </div>
-    <p class="note">積分：勝一場 2 分、敗一場 1 分。同積分時，兩隊看對戰勝負；三隊以上只計算彼此之間的對戰，依序比 場數勝率 → 點數勝率 → 局數勝率 → 分數勝率 → 抽籤；過程中若剩兩隊同分，改看這兩隊的對戰勝負。只計算已完賽的對戰。</p>`;
+    ${rulesCard()}`;
+}
+
+// 給選手看的賽制與名次判定規則（賽制依主辦設定顯示）
+function rulesCard() {
+  const s = state.settings;
+  const sys = systemOf(s.match_system);
+  const perPoint = s.games_per_point === 3 ? '三局兩勝' : '五局三勝';
+  return `
+    <section class="rules card" aria-labelledby="rules-title">
+      <h3 id="rules-title">📖 賽制與名次判定規則</h3>
+      <p><b>賽制：</b>團體賽單循環，${sys.label}（${sys.points.map((p) => p.type).join('、')}），先拿 ${sys.winPoints} 點的隊伍獲勝；每一點${perPoint}，每局 11 分制（10:10 後需領先 2 分）。</p>
+      <p><b>排點：</b>每隊至少登錄 ${minPlayersFor(s, s.match_system)} 人，同一場比賽中每位選手只能出賽一點。雙方都鎖定排點後，出賽名單才會同時公布。</p>
+      <p><b>積分：</b>每場比賽<b>勝隊得 2 分、敗隊得 1 分</b>，積分高者名次在前。</p>
+      <ol class="rule-steps">
+        <li><b>兩隊積分相同：</b>看這兩隊之間比賽的勝負，勝者在前。
+          <small>（比賽進行中兩隊還沒交手時，暫時依序比全部比賽的點數勝率、局數勝率、分數勝率）</small></li>
+        <li><b>三隊以上積分相同（互咬）：</b>只計算這幾隊<u>彼此之間</u>的比賽，依序比：
+          <ol class="rule-sub">
+            <li><b>場數勝率</b>＝勝場數 ÷ 敗場數</li>
+            <li><b>點數勝率</b>＝贏得的點數 ÷ 輸掉的點數</li>
+            <li><b>局數勝率</b>＝勝局數 ÷ 敗局數</li>
+            <li><b>分數勝率</b>＝總得分 ÷ 總失分</li>
+          </ol>
+          比較過程中，若只剩<b>兩隊</b>數據相同，改看這兩隊之間比賽的勝負。</li>
+        <li><b>以上全部相同：</b>由主辦單位抽籤決定。</li>
+      </ol>
+      <div class="rule-example">
+        <b>例：</b>甲、乙、丙三隊積分相同。彼此之間甲勝乙、乙勝丙、丙勝甲，三隊都是 1 勝 1 敗，場數勝率相同。
+        接著比三隊彼此之間的點數勝率，例如甲 5:3、丙 5:5、乙 3:5，名次就是 甲 → 丙 → 乙。
+      </div>
+      <p class="rule-foot">＊勝率計算時，沒有輸過（分母為 0）視為最高。排名表的「判定依據」欄會顯示每隊是在哪一步分出名次。只計算已完賽的比賽。</p>
+    </section>`;
 }
 
 function renderBoard() {
