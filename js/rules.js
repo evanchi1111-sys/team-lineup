@@ -89,7 +89,7 @@ export function matchResult(match) {
 // ---------------------------------------------------------------- 積分排名
 // 積分：勝一場 2 分、敗一場 1 分。只計算已完賽的對戰。
 // 同積分：兩隊看對戰勝負；三隊以上只計算彼此之間的對戰，依序比
-// 場數勝率 → 點數勝率 → 局數勝率 → 分數勝率 → 抽籤。
+// 場數勝率 → 點數勝率 → 局數勝率 → 分數勝率 → 抽籤；過程中剩兩隊同分時，改看兩隊對戰勝負。
 
 const ratio = (won, lost) => (lost === 0 ? (won > 0 ? Infinity : 1) : won / lost);
 const emptyTotals = () => ({ matchesWon: 0, matchesLost: 0, rubbersWon: 0, rubbersLost: 0, gamesWon: 0, gamesLost: 0, pointsWon: 0, pointsLost: 0 });
@@ -202,28 +202,36 @@ function resolveGroup(group, done) {
     }
     s.mutual = { ...t, ...ratiosOf(t) };
   }
-  const sorted = [...group].sort((a, b) => {
-    for (const { key } of STEPS) {
-      if (a.mutual[key] !== b.mutual[key]) return a.mutual[key] > b.mutual[key] ? -1 : 1;
-    }
-    return drawRank(a) - drawRank(b);
-  });
-  for (const s of sorted) {
-    let peers = group;
-    s.basis = '';
-    for (const { key, label } of STEPS) {
-      peers = peers.filter((o) => o.mutual[key] === s.mutual[key]);
-      if (peers.length === 1) {
-        s.basis = label;
-        break;
-      }
-    }
-    if (!s.basis) {
-      s.drawTied = true;
-      s.basis = '戰績相同・抽籤';
+  return splitByStep(group, 0, done);
+}
+
+// 依第 step 步把仍同分的隊伍分組，數值高的在前，每組再往下一步比。
+// 某一步比完剛好剩兩隊同分時，改看這兩隊的對戰勝負（兩隊還沒交手才繼續比下一步）。
+function splitByStep(members, step, done) {
+  if (members.length === 1) return members;
+  if (members.length === 2 && step > 0) {
+    const [a, b] = members;
+    const h2h = done.find((m) => (m.team_a_id === a.team.id && m.team_b_id === b.team.id) || (m.team_a_id === b.team.id && m.team_b_id === a.team.id));
+    if (h2h) {
+      const r = matchResult(h2h);
+      const aWon = (r.winner === 1 && h2h.team_a_id === a.team.id) || (r.winner === 2 && h2h.team_b_id === a.team.id);
+      a.basis = b.basis = '互咬・剩兩隊看對戰勝負';
+      return aWon ? [a, b] : [b, a];
     }
   }
-  return sorted;
+  if (step >= STEPS.length) {
+    members.forEach((s) => { s.drawTied = true; s.basis = '戰績相同・抽籤'; });
+    return [...members].sort((a, b) => drawRank(a) - drawRank(b));
+  }
+  const { key, label } = STEPS[step];
+  const values = [...new Set(members.map((s) => s.mutual[key]))].sort((x, y) => y - x);
+  const result = [];
+  for (const v of values) {
+    const part = members.filter((s) => s.mutual[key] === v);
+    if (part.length === 1) part[0].basis = label;
+    result.push(...splitByStep(part, step + 1, done));
+  }
+  return result;
 }
 
 // 單循環賽程（環狀輪轉法），奇數隊自動輪空
