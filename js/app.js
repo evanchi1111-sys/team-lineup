@@ -322,7 +322,11 @@ function renderTeam() {
     </section>
 
     <h3 class="round-title">本隊對戰與排點</h3>
-    ${matches.length ? matches.map((m) => teamMatchCard(m, team, players)).join('') : emptyState('目前沒有本隊的對戰。')}`;
+    ${
+      matches.length
+        ? matches.map((m) => teamMatchCard(m, team, players)).join('')
+        : `<div class="banner info">📋 主辦單位還沒有安排本隊的對戰。<br>排點是「每一場對戰」各自排，主辦在「對戰與比分」產生賽程後，這裡就會出現每場比賽的排點表（畫面會自動更新）。</div>`
+    }`;
 }
 
 function teamMatchCard(m, team, players) {
@@ -474,6 +478,12 @@ function adminMatchCard(m) {
 function renderAdminTeams() {
   const busy = state.busy ? 'disabled' : '';
   return `
+    ${
+      state.teams.length >= 2 && !state.matches.length
+        ? `<div class="banner warn">下一步：產生賽程後，各隊才能開始排點。
+             <div class="actions"><button class="btn primary" data-action="generate" ${busy}>產生單循環賽程</button></div></div>`
+        : ''
+    }
     <div class="forms">
       <form class="card form" data-form="create-team">
         <h3>新增隊伍</h3>
