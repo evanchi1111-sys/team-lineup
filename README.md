@@ -1,5 +1,7 @@
 # 🏓 桌球團體賽排點系統
 
+**網站**：<https://evanchi1111-sys.github.io/team-lineup/>
+
 各隊用手機秘密排點，雙方都鎖定後自動同時公布；主辦單位即時登錄比分，所有人手機上即時看到結果。
 
 - **3 點制**（單、雙、雙，先拿 2 點勝）或 **5 點制**（單、雙、單、雙、單，先拿 3 點勝）；每一點三局兩勝或五局三勝
@@ -52,3 +54,17 @@
 | `js/rules.js` | 賽制、排點檢查、比分計算、單循環賽程 |
 | `js/export.js` | 匯出 Excel、LINE 戰報 |
 | `supabase/setup.sql` | 資料表、安全規則、驗證函式、即時同步 |
+
+## 桌球賽事系列
+同一個 Supabase 專案可共用，各系統資料表前綴不同。
+
+| 系統 | 用途 | 網站 |
+|---|---|---|
+| [DSC-table-tennis](https://github.com/evanchi1111-sys/DSC-table-tennis) | 雙打單循環即時計分 | <https://evanchi1111-sys.github.io/DSC-table-tennis/> |
+| [singles-tournament](https://github.com/evanchi1111-sys/singles-tournament) | 單打賽（單淘汰、雙淘汰、分組循環＋總決賽） | <https://evanchi1111-sys.github.io/singles-tournament/> |
+| [team-lineup](https://github.com/evanchi1111-sys/team-lineup) | 團體賽秘密排點與即時比分 | <https://evanchi1111-sys.github.io/team-lineup/> |
+| [tabletennis-prize](https://github.com/evanchi1111-sys/tabletennis-prize) | 獎品採購金額分配 | <https://evanchi1111-sys.github.io/tabletennis-prize/> |
+
+## 授權
+
+以 [MIT 授權](LICENSE) 釋出，Copyright (c) 2026 evanchi1111-sys。
