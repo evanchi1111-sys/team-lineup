@@ -150,3 +150,27 @@ input, select, textarea { border: 1.5px solid #c5d5e6; border-radius: 14px; back
 .who { flex: none; }
 .who .chip { white-space: nowrap; font-size: 12px; padding: 2px 8px; background: #fff; color: var(--green-d); }
 @media (max-width: 480px) { .brand h1 { font-size: 16px; line-height: 1.25; } .brand-logo { width: 40px; height: 40px; } }
+/* 四個功能分頁（對戰看板、參賽選手、各隊排點、主辦管理） */
+.viewtabs { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.viewtab { padding: 0 4px; font-size: 13px; }
+@media (min-width: 960px) { .viewtabs { grid-template-columns: repeat(4, auto); justify-content: start; padding-bottom: 14px; } .viewtab { padding: 0 24px; font-size: 15px; } }
+.roster li { align-items: center; gap: 4px; }
+.roster li { padding: 4px 6px 4px 4px; }
+
+/* ================= 電腦版版面（螢幕寬度 ≥ 960px） ================= */
+@media (min-width: 960px) {
+  .container { width: min(1180px, 100% - 64px); }
+  /* 對戰看板：左欄固定賽事狀態，右欄放分頁、積分排名與對戰賽程 */
+  main.container.view-board { display: grid; grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); gap: 18px 28px; align-items: start; }
+  main.container.view-board > * { grid-column: 1 / -1; }
+  main.container.view-board > .status { grid-column: 1; grid-row: span 12; position: sticky; top: 16px; margin-bottom: 0; }
+  main.container.view-board > .status ~ * { grid-column: 2; }
+  main.container.view-board .match-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  /* 主辦管理：各隊的隊伍卡排成兩欄 */
+  main.container.view-admin { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; align-items: start; }
+  main.container.view-admin > * { grid-column: 1 / -1; }
+  main.container.view-admin > .team-card { grid-column: auto; margin-bottom: 0; }
+  th, td { padding: 14px 12px; }
+  .who-btn:hover .team { color: var(--green); text-decoration: underline; }
+}
+@media (min-width: 1280px) { .player-grid { grid-template-columns: repeat(5, 1fr); } }

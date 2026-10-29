@@ -1,9 +1,10 @@
 import { ORGANIZER_EMAIL } from './config.js';
-import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js';
+import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261029h';
 import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js';
 import { exportExcel, lineReport } from './export.js';
+import { avatar, titleChip, openPersonEditor, profileOf } from './people.js';
 
-const VIEWS = { board: '對戰看板', team: '各隊排點', admin: '主辦管理' };
+const VIEWS = { board: '對戰看板', players: '參賽選手', team: '各隊排點', admin: '主辦管理' };
 const ADMIN_TABS = { matches: '對戰與比分', teams: '隊伍與選手', settings: '設定與匯出' };
 const BOARD_TABS = { standings: '積分排名', matches: '對戰賽程' };
 
@@ -29,6 +30,7 @@ const state = {
   settings: { ...DEFAULT_SETTINGS },
   teams: [],
   players: [],
+  people: {}, // 選手資料庫：{ 姓名: { unit, title, photo_url } }，三個系統共用
   matches: [],
   lineups: [],
   user: null,
@@ -54,6 +56,9 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const teamById = (id) => state.teams.find((t) => t.id === id);
 const teamName = (id) => teamById(id)?.name ?? '（已刪除）';
 const playersOf = (teamId) => state.players.filter((p) => p.team_id === teamId);
+// 隊員的單位、頭銜、照片來自選手資料庫（以姓名對應）；沒有資料時單位預設為所屬隊名
+const profileOfPlayer = (p) => profileOf(state.people, p.name, { unit: teamById(p.team_id)?.name || null });
+const playerChip = (p) => `<button type="button" class="who-btn" data-action="player-profile" data-id="${p.id}">${avatar(profileOfPlayer(p), 'sm')}<span class="who-tx"><span class="team">${esc(p.name)}</span><small class="who-sub">${esc([profileOfPlayer(p).unit, profileOfPlayer(p).title].filter(Boolean).join(' · '))}</small></span></button>`;
 const playerName = (id) => state.players.find((p) => p.id === id)?.name ?? '（已刪除）';
 const playerNames = (ids) => (ids || []).filter(Boolean).map(playerName).join('、');
 const isOrganizer = () => !!state.user && (state.user.email || '').toLowerCase() === ORGANIZER_EMAIL.toLowerCase();
@@ -381,6 +386,25 @@ function teamLogout(notice = null) {
   store.set('team', null, sessionStorage);
 }
 
+// 參賽選手頁：每支隊伍一區，選手卡含照片、姓名、單位、頭銜
+function renderPlayers() {
+  if (!state.teams.length) return `<div class="empty"><span aria-hidden="true">🏓</span><p>還沒有隊伍與選手。</p></div>`;
+  return state.teams.map((t) => {
+    const list = playersOf(t.id);
+    return `
+      <section class="card">
+        <div class="section-head"><h3>${esc(t.name)} <span class="count">${list.length} 人</span></h3></div>
+        ${list.length ? `<div class="player-grid">${list.map((p) => {
+          const prof = profileOfPlayer(p);
+          return `<button type="button" class="pcard" data-action="player-profile" data-id="${p.id}">
+            <span class="pcard-photo">${avatar(prof, 'cover')}</span>
+            <span class="pcard-tx"><b>${esc(p.name)}</b><small>${esc(prof.unit || '（未填單位）')}</small>${titleChip(prof.title)}</span>
+          </button>`;
+        }).join('')}</div>` : '<p class="note">尚無隊員</p>'}
+      </section>`;
+  }).join('');
+}
+
 function renderTeam() {
   if (!state.team) return renderTeamLogin();
   const team = teamById(state.team.id);
@@ -402,7 +426,7 @@ function renderTeam() {
         <span class="note">排點需至少 ${minNeeded} 人</span>
       </div>
       <ul class="roster">
-        ${players.map((p) => `<li><span>${esc(p.name)}</span><button class="icon-btn" data-action="team-remove-player" data-id="${p.id}" aria-label="刪除 ${esc(p.name)}" ${busy}>✕</button></li>`).join('') || '<li class="note">尚無隊員</li>'}
+        ${players.map((p) => `<li>${playerChip(p)}<button class="icon-btn" data-action="team-remove-player" data-id="${p.id}" aria-label="刪除 ${esc(p.name)}" ${busy}>✕</button></li>`).join('') || '<li class="note">尚無隊員</li>'}
       </ul>
       <form class="inline-form" data-form="team-add-player">
         <input name="name" maxlength="20" placeholder="新增隊員姓名" required autocomplete="off" aria-label="新增隊員姓名">
@@ -604,7 +628,7 @@ function renderAdminTeams() {
                   <span class="code">密碼 <b>${esc(state.passcodes[t.id] ?? '…')}</b></span>
                 </div>
                 <ul class="roster">
-                  ${players.map((p) => `<li><span>${esc(p.name)}</span><button class="icon-btn" data-action="admin-remove-player" data-id="${p.id}" aria-label="刪除 ${esc(p.name)}" ${busy}>✕</button></li>`).join('') || '<li class="note">尚無隊員</li>'}
+                  ${players.map((p) => `<li>${playerChip(p)}<button class="icon-btn" data-action="edit-person" data-id="${p.id}" aria-label="編輯 ${esc(p.name)} 的資料" ${busy}>✎</button><button class="icon-btn" data-action="admin-remove-player" data-id="${p.id}" aria-label="刪除 ${esc(p.name)}" ${busy}>✕</button></li>`).join('') || '<li class="note">尚無隊員</li>'}
                 </ul>
                 <form class="inline-form" data-form="admin-add-player" data-team="${t.id}">
                   <input name="name" maxlength="20" placeholder="新增隊員" required autocomplete="off" aria-label="新增隊員到 ${esc(t.name)}">
@@ -667,6 +691,7 @@ function renderAdminSettings() {
 // ---------------------------------------------------------------- 主畫面
 
 function render() {
+  document.dispatchEvent(new CustomEvent('site-organizer', { detail: isOrganizer() })); // 只有主辦看得到共用導覽列
   if (!state.loaded) {
     app.innerHTML = state.error
       ? `<div class="center-card"><h2>無法讀取資料</h2><p>${esc(state.error)}</p><button class="btn primary" data-action="retry">重新載入</button></div>`
@@ -675,10 +700,11 @@ function render() {
   }
   app.innerHTML = `
     ${renderHeader()}
-    <main class="container">
+    <main class="container view-${state.view}">
       ${state.error ? `<div class="banner error">⚠️ 與資料庫連線異常：${esc(state.error)}（畫面可能不是最新）</div>` : ''}
       ${demo ? `<div class="banner demo">🧪 示範模式：資料只存在這個分頁，重新整理就會還原。</div>` : ''}
       ${state.view === 'board' ? renderBoard() : ''}
+      ${state.view === 'players' ? renderPlayers() : ''}
       ${state.view === 'team' ? renderTeam() : ''}
       ${state.view === 'admin' ? renderAdmin() : ''}
     </main>`;
@@ -700,6 +726,56 @@ function openModal(html, onReady) {
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop || e.target.closest('[data-close]')) close(); });
   onReady(modalRoot.querySelector('.modal'), close);
   if (!modalRoot.contains(document.activeElement)) modalRoot.querySelector('input, button:not([data-close])')?.focus();
+}
+
+// 編輯選手的單位、頭銜、照片（只有主辦可以；存到共用的選手資料庫）
+function openPlayerEdit(player) {
+  const prof = profileOfPlayer(player);
+  openPersonEditor({
+    openModal,
+    person: prof,
+    onSave: ({ unit, title, blob, removed }) => run(async () => {
+      let photo_url = prof.photo_url || null;
+      if (blob) photo_url = await backend.uploadPhoto(blob);
+      else if (removed) photo_url = null;
+      await backend.savePerson(player.name, { unit, title, photo_url });
+    }, '選手資料已儲存'),
+  });
+}
+
+// 選手檔案：基本資料，以及已公布的排點出賽紀錄
+function openPlayerProfile(id) {
+  const p = state.players.find((x) => x.id === id);
+  if (!p) return;
+  const prof = profileOfPlayer(p);
+  const team = teamById(p.team_id);
+  const appearances = [];
+  for (const l of state.lineups) {
+    const slots = l.slots || {};
+    const keys = Object.keys(slots).filter((k) => (slots[k] || []).includes(id));
+    if (!keys.length) continue;
+    const m = state.matches.find((x) => x.id === l.match_id);
+    if (!m) continue;
+    const opp = m.team_a_id === l.team_id ? m.team_b_id : m.team_a_id;
+    const sys = systemOf(m.match_system);
+    const labels = keys.map((k) => { const pt = sys.points.find((q) => q.key === k); return pt ? `${pt.label}${pt.type}` : k; });
+    appearances.push({ round: m.round, opp: teamName(opp), labels: labels.join('、') });
+  }
+  appearances.sort((a, b) => a.round - b.round);
+  openModal(`
+    <div class="profile">
+      <button type="button" class="profile-x" data-close aria-label="關閉">✕</button>
+      <div class="profile-hero">${avatar(prof, 'big')}</div>
+      <h2>${esc(p.name)}</h2>
+      <p class="profile-unit">${esc(prof.unit || '（未填單位）')}</p>
+      <p>${titleChip(prof.title)} <span class="ttl plain">${esc(team?.name || '')}</span></p>
+      <h3 class="profile-h">出賽紀錄（已公布的排點）</h3>
+      ${appearances.length ? `<ul class="profile-matches">${appearances.map((a) => `<li class="live"><span>第 ${a.round} 輪 vs ${esc(a.opp)}</span><b>${esc(a.labels)}</b><em></em></li>`).join('')}</ul>` : '<p class="note">還沒有公布的出賽紀錄。</p>'}
+      ${isOrganizer() ? `<div class="modal-actions"><button type="button" class="btn" data-edit>✎ 編輯資料</button></div>` : ''}
+    </div>`,
+  (modal, close) => {
+    modal.querySelector('[data-edit]')?.addEventListener('click', () => { close(); openPlayerEdit(p); });
+  });
 }
 
 function openScoreModal(match) {
@@ -911,6 +987,8 @@ function parseBulkTeams(text) {
 const actions = {
   retry: () => { state.error = null; render(); reload(); },
   view: ({ view }) => { state.view = view; store.set('view', view); render(); window.scrollTo(0, 0); },
+  'player-profile': ({ id }) => openPlayerProfile(id),
+  'edit-person': ({ id }) => { const p = state.players.find((x) => x.id === id); if (p) openPlayerEdit(p); },
   'board-tab': ({ tab }) => { state.boardTab = tab; store.set('boardTab', tab); render(); },
   'admin-tab': ({ tab }) => { state.adminTab = tab; store.set('adminTab', tab); render(); if (tab === 'teams') reload(); },
   logout: async () => { await backend.signOut(); toast('已登出'); },

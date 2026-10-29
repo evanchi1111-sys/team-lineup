@@ -1,4 +1,5 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY, ORGANIZER_EMAIL } from './config.js';
+import { peopleApi, demoPeopleApi } from './people.js';
 import { validateLineup, minPlayersFor, systemOf } from './rules.js';
 
 export const DEFAULT_SETTINGS = { id: 1, title: '桌球團體賽排點系統', match_system: 5, games_per_point: 5, min_players_3: 6, min_players_5: 7 };
@@ -28,6 +29,7 @@ function friendlyError(error) {
 async function createSupabaseBackend() {
   const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const people = peopleApi(sb);
 
   const check = ({ data, error }) => {
     if (error) throw friendlyError(error);
@@ -49,12 +51,13 @@ async function createSupabaseBackend() {
 
   return {
     async load() {
-      const [settings, teams, players, matches, lineups] = await Promise.all([
+      const [settings, teams, players, matches, lineups, peopleMap] = await Promise.all([
         sb.from('tl_settings').select('*').eq('id', 1).maybeSingle(),
         sb.from('tl_teams').select('*').order('created_at').order('name'),
         sb.from('tl_players').select('*').order('created_at').order('name'),
         sb.from('tl_matches').select('*').order('round').order('seq'),
         sb.rpc('tl_public_lineups'),
+        people.load(),
       ]);
       return {
         settings: check(settings) || { ...DEFAULT_SETTINGS },
@@ -62,11 +65,12 @@ async function createSupabaseBackend() {
         players: check(players),
         matches: check(matches),
         lineups: check(lineups),
+        people: peopleMap,
       };
     },
     subscribe(onChange, onStatus = () => {}) {
       const channel = sb.channel('team-lineup');
-      for (const table of ['tl_settings', 'tl_teams', 'tl_players', 'tl_matches']) {
+      for (const table of ['tl_settings', 'tl_teams', 'tl_players', 'tl_matches', 'people']) {
         channel.on('postgres_changes', { event: '*', schema: 'public', table }, onChange);
       }
       channel.subscribe((status) => onStatus(status));
@@ -140,6 +144,9 @@ async function createSupabaseBackend() {
     async adminDeleteMatch(id) {
       mustAffect(await sb.from('tl_matches').delete().eq('id', id).select());
     },
+    // 選手資料庫（單位、頭銜、照片），三個系統共用
+    async savePerson(name, patch) { await people.save(name, patch); },
+    uploadPhoto(blob) { return people.upload(blob); },
     async adminWipe() {
       await this.adminUpdateSettings({});
       check(await sb.from('tl_matches').delete().not('id', 'is', null));
@@ -157,6 +164,7 @@ function createDemoBackend() {
   const stamp = (i) => new Date(t0 + i).toISOString();
   const db = { settings: { ...DEFAULT_SETTINGS }, teams: [], secrets: {}, players: [], matches: [], lineups: [] };
   const DEMO_PASSWORD = 'demo1234';
+  const peopleDemo = demoPeopleApi();
 
   const sample = [
     ['東區鐵人', '1111', ['陳志明', '林建宏', '黃俊傑', '張家豪', '李承翰', '王冠宇', '吳宗憲', '劉育成']],
@@ -164,13 +172,18 @@ function createDemoBackend() {
     ['南港飛龍', '3333', ['周子豪', '曾柏翰', '彭俊宏', '游志偉', '詹凱翔', '葉承恩', '潘彥廷']],
     ['北城猛虎', '4444', ['楊博文', '蕭志遠', '賴俊男', '江冠霖', '范世豪', '石育德']],
   ];
+  const demoSeed = {};
   sample.forEach(([name, code, names], i) => {
     const id = uid();
     db.teams.push({ id, name, created_at: stamp(i) });
     db.secrets[id] = code;
-    names.forEach((n, j) => db.players.push({ id: uid(), team_id: id, name: n, created_at: stamp(i * 100 + j) }));
+    names.forEach((n, j) => {
+      db.players.push({ id: uid(), team_id: id, name: n, created_at: stamp(i * 100 + j) });
+      demoSeed[n] = { name: n, unit: name, title: j === 0 ? '隊長' : '選手', photo_url: null };
+    });
   });
 
+  Promise.all(Object.entries(demoSeed).map(([n, p]) => peopleDemo.save(n, p)));
   let user = null;
   const dataListeners = new Set();
   const authListeners = new Set();
@@ -192,6 +205,7 @@ function createDemoBackend() {
       const visible = db.matches.filter((m) => m.published || user);
       return {
         settings: clone(db.settings),
+        people: await peopleDemo.load(),
         teams: clone(db.teams),
         players: clone(db.players),
         matches: clone(visible),
@@ -338,6 +352,9 @@ function createDemoBackend() {
       db.lineups = db.lineups.filter((l) => l.match_id !== id);
       emit();
     },
+    // 選手資料庫（示範模式：只存在記憶體）
+    async savePerson(name, patch) { requireOrganizer(); await peopleDemo.save(name, patch); emit(); },
+    uploadPhoto(blob) { return peopleDemo.upload(blob); },
     async adminWipe() {
       requireOrganizer();
       Object.assign(db, { teams: [], secrets: {}, players: [], matches: [], lineups: [] });
