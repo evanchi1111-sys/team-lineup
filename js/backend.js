@@ -144,9 +144,6 @@ async function createSupabaseBackend() {
     async adminDeleteMatch(id) {
       mustAffect(await sb.from('tl_matches').delete().eq('id', id).select());
     },
-    // 選手資料庫（單位、頭銜、照片），三個系統共用
-    async savePerson(name, patch) { await people.save(name, patch); },
-    uploadPhoto(blob) { return people.upload(blob); },
     async adminWipe() {
       await this.adminUpdateSettings({});
       check(await sb.from('tl_matches').delete().not('id', 'is', null));
@@ -184,7 +181,7 @@ function createDemoBackend() {
   });
 
   Promise.all(Object.entries(demoSeed).map(([n, p]) => peopleDemo.save(n, p)));
-  let user = null;
+  let user = (() => { try { return sessionStorage.getItem('demo_organizer') ? { email: ORGANIZER_EMAIL } : null; } catch { return null; } })(); // 示範模式：同一個分頁切換系統時保留主辦登入
   const dataListeners = new Set();
   const authListeners = new Set();
   const emit = () => setTimeout(() => dataListeners.forEach((fn) => fn()), 30);
@@ -224,10 +221,10 @@ function createDemoBackend() {
     onAuthChange(cb) { authListeners.add(cb); return () => authListeners.delete(cb); },
     async signIn(email, password) {
       if (email.toLowerCase() !== ORGANIZER_EMAIL.toLowerCase() || password !== DEMO_PASSWORD) fail('帳號或密碼錯誤');
-      user = { email: ORGANIZER_EMAIL };
+      user = { email: ORGANIZER_EMAIL }; try { sessionStorage.setItem('demo_organizer', '1'); } catch { /* 忽略 */ }
       authListeners.forEach((fn) => fn(user));
     },
-    async signOut() { user = null; authListeners.forEach((fn) => fn(null)); },
+    async signOut() { user = null; try { sessionStorage.removeItem('demo_organizer'); } catch { /* 忽略 */ } authListeners.forEach((fn) => fn(null)); },
     async changePassword() { fail('示範模式無法變更密碼'); },
 
     async teamLogin(team, code) { verify(team, code); return { ok: true }; },
@@ -352,9 +349,6 @@ function createDemoBackend() {
       db.lineups = db.lineups.filter((l) => l.match_id !== id);
       emit();
     },
-    // 選手資料庫（示範模式：只存在記憶體）
-    async savePerson(name, patch) { requireOrganizer(); await peopleDemo.save(name, patch); emit(); },
-    uploadPhoto(blob) { return peopleDemo.upload(blob); },
     async adminWipe() {
       requireOrganizer();
       Object.assign(db, { teams: [], secrets: {}, players: [], matches: [], lineups: [] });

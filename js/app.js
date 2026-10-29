@@ -1,8 +1,8 @@
 import { ORGANIZER_EMAIL } from './config.js';
-import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261029h';
+import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261029j';
 import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js';
 import { exportExcel, lineReport } from './export.js';
-import { avatar, titleChip, openPersonEditor, profileOf } from './people.js';
+import { avatar, titleChip, profileOf } from './people.js';
 
 const VIEWS = { board: '對戰看板', players: '參賽選手', team: '各隊排點', admin: '主辦管理' };
 const ADMIN_TABS = { matches: '對戰與比分', teams: '隊伍與選手', settings: '設定與匯出' };
@@ -628,7 +628,7 @@ function renderAdminTeams() {
                   <span class="code">密碼 <b>${esc(state.passcodes[t.id] ?? '…')}</b></span>
                 </div>
                 <ul class="roster">
-                  ${players.map((p) => `<li>${playerChip(p)}<button class="icon-btn" data-action="edit-person" data-id="${p.id}" aria-label="編輯 ${esc(p.name)} 的資料" ${busy}>✎</button><button class="icon-btn" data-action="admin-remove-player" data-id="${p.id}" aria-label="刪除 ${esc(p.name)}" ${busy}>✕</button></li>`).join('') || '<li class="note">尚無隊員</li>'}
+                  ${players.map((p) => `<li>${playerChip(p)}<button class="icon-btn" data-action="admin-remove-player" data-id="${p.id}" aria-label="刪除 ${esc(p.name)}" ${busy}>✕</button></li>`).join('') || '<li class="note">尚無隊員</li>'}
                 </ul>
                 <form class="inline-form" data-form="admin-add-player" data-team="${t.id}">
                   <input name="name" maxlength="20" placeholder="新增隊員" required autocomplete="off" aria-label="新增隊員到 ${esc(t.name)}">
@@ -728,21 +728,6 @@ function openModal(html, onReady) {
   if (!modalRoot.contains(document.activeElement)) modalRoot.querySelector('input, button:not([data-close])')?.focus();
 }
 
-// 編輯選手的單位、頭銜、照片（只有主辦可以；存到共用的選手資料庫）
-function openPlayerEdit(player) {
-  const prof = profileOfPlayer(player);
-  openPersonEditor({
-    openModal,
-    person: prof,
-    onSave: ({ unit, title, blob, removed }) => run(async () => {
-      let photo_url = prof.photo_url || null;
-      if (blob) photo_url = await backend.uploadPhoto(blob);
-      else if (removed) photo_url = null;
-      await backend.savePerson(player.name, { unit, title, photo_url });
-    }, '選手資料已儲存'),
-  });
-}
-
 // 選手檔案：基本資料，以及已公布的排點出賽紀錄
 function openPlayerProfile(id) {
   const p = state.players.find((x) => x.id === id);
@@ -771,11 +756,8 @@ function openPlayerProfile(id) {
       <p>${titleChip(prof.title)} <span class="ttl plain">${esc(team?.name || '')}</span></p>
       <h3 class="profile-h">出賽紀錄（已公布的排點）</h3>
       ${appearances.length ? `<ul class="profile-matches">${appearances.map((a) => `<li class="live"><span>第 ${a.round} 輪 vs ${esc(a.opp)}</span><b>${esc(a.labels)}</b><em></em></li>`).join('')}</ul>` : '<p class="note">還沒有公布的出賽紀錄。</p>'}
-      ${isOrganizer() ? `<div class="modal-actions"><button type="button" class="btn" data-edit>✎ 編輯資料</button></div>` : ''}
     </div>`,
-  (modal, close) => {
-    modal.querySelector('[data-edit]')?.addEventListener('click', () => { close(); openPlayerEdit(p); });
-  });
+  () => {});
 }
 
 function openScoreModal(match) {
@@ -988,7 +970,6 @@ const actions = {
   retry: () => { state.error = null; render(); reload(); },
   view: ({ view }) => { state.view = view; store.set('view', view); render(); window.scrollTo(0, 0); },
   'player-profile': ({ id }) => openPlayerProfile(id),
-  'edit-person': ({ id }) => { const p = state.players.find((x) => x.id === id); if (p) openPlayerEdit(p); },
   'board-tab': ({ tab }) => { state.boardTab = tab; store.set('boardTab', tab); render(); },
   'admin-tab': ({ tab }) => { state.adminTab = tab; store.set('adminTab', tab); render(); if (tab === 'teams') reload(); },
   logout: async () => { await backend.signOut(); toast('已登出'); },
