@@ -148,14 +148,17 @@ app.addEventListener('focusout', () => {
 
 // ---------------------------------------------------------------- 共用畫面元件
 
+// 網站標題前面固定加上公司名；主辦若已在標題裡寫了「中龍鋼鐵」就不重複加
+const siteTitle = () => (state.settings.title.includes("中龍鋼鐵") ? state.settings.title : `中龍鋼鐵 ${state.settings.title}`);
+
 function renderHeader() {
   return `
     <header class="topbar">
       <div class="container topbar-inner">
         <div class="brand">
-          <span class="brand-icon" aria-hidden="true">🏓</span>
+          <img class="brand-logo" src="img/logo-glow-96.png" srcset="img/logo-glow-96.png 1x, img/logo-glow-192.png 2x" width="46" height="46" alt="中龍鋼鐵">
           <div>
-            <h1>${esc(state.settings.title)}</h1>
+            <h1>${esc(siteTitle())}</h1>
             ${
               state.live
                 ? `<p class="live"><span class="dot" aria-hidden="true"></span>即時更新中</p>`
