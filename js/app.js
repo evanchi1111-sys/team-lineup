@@ -1,5 +1,5 @@
 import { ORGANIZER_EMAIL } from './config.js';
-import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261029n';
+import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261029o';
 import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js';
 import { exportExcel, lineReport } from './export.js';
 import { avatar, titleChip, profileOf, openPeoplePicker, resultsHtml, PLACE_LABEL, openSaveResultsDialog } from './people.js';
