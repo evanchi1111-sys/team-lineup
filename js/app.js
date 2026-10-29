@@ -1,8 +1,8 @@
 import { ORGANIZER_EMAIL } from './config.js';
-import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261029j';
+import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261029n';
 import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js';
 import { exportExcel, lineReport } from './export.js';
-import { avatar, titleChip, profileOf } from './people.js';
+import { avatar, titleChip, profileOf, openPeoplePicker, resultsHtml, PLACE_LABEL, openSaveResultsDialog } from './people.js';
 
 const VIEWS = { board: '對戰看板', players: '參賽選手', team: '各隊排點', admin: '主辦管理' };
 const ADMIN_TABS = { matches: '對戰與比分', teams: '隊伍與選手', settings: '設定與匯出' };
@@ -31,6 +31,7 @@ const state = {
   teams: [],
   players: [],
   people: {}, // 選手資料庫：{ 姓名: { unit, title, photo_url } }，三個系統共用
+  results: {}, // 選手歷年成績（冠、亞、季軍）：{ 姓名: [成績] }
   matches: [],
   lineups: [],
   user: null,
@@ -604,14 +605,10 @@ function renderAdminTeams() {
         <label>隊伍密碼（留白自動產生 6 位數）<input name="code" maxlength="20" autocomplete="off"></label>
         <button class="btn primary" ${busy}>新增隊伍</button>
       </form>
-      <form class="card form" data-form="bulk-teams">
-        <h3>批次匯入</h3>
-        <label>每行一隊：隊名＋冒號＋隊員（用逗號或頓號分開）
-          <textarea name="text" rows="5" placeholder="東區鐵人：陳志明、林建宏、黃俊傑&#10;西區旋風: 蔡明哲,鄭凱文"></textarea>
-        </label>
-        <button class="btn primary" ${busy}>匯入</button>
-        <p class="note">已存在的隊名會把隊員加進該隊。新隊伍的密碼會自動產生。</p>
-      </form>
+      <div class="card">
+        <h3>隊員怎麼加？</h3>
+        <p class="note">隊員資料請先在「選手資料庫」頁建立。建好隊伍後，在下面各隊的卡片按「挑選隊員」，直接從資料庫勾選，不需要輸入或匯入。</p>
+      </div>
     </div>
     <div class="section-head">
       <h3>隊伍（${state.teams.length}）</h3>
@@ -630,11 +627,8 @@ function renderAdminTeams() {
                 <ul class="roster">
                   ${players.map((p) => `<li>${playerChip(p)}<button class="icon-btn" data-action="admin-remove-player" data-id="${p.id}" aria-label="刪除 ${esc(p.name)}" ${busy}>✕</button></li>`).join('') || '<li class="note">尚無隊員</li>'}
                 </ul>
-                <form class="inline-form" data-form="admin-add-player" data-team="${t.id}">
-                  <input name="name" maxlength="20" placeholder="新增隊員" required autocomplete="off" aria-label="新增隊員到 ${esc(t.name)}">
-                  <button class="btn" ${busy}>新增</button>
-                </form>
                 <div class="actions">
+                  <button class="btn primary small" data-action="pick-members" data-id="${t.id}" ${busy}>👥 挑選隊員</button>
                   <button class="btn small" data-action="rename-team" data-id="${t.id}" ${busy}>改隊名</button>
                   <button class="btn small" data-action="reset-code" data-id="${t.id}" ${busy}>重設密碼</button>
                   <button class="btn small danger" data-action="delete-team" data-id="${t.id}" ${busy}>刪除隊伍</button>
@@ -677,6 +671,7 @@ function renderAdminSettings() {
         <button class="btn" data-action="export-excel">匯出 Excel</button>
         <button class="btn" data-action="copy-report">複製 LINE 戰報</button>
         <button class="btn" data-action="copy-link">複製網站網址</button>
+        <button class="btn primary" data-action="save-results" ${busy}>🏅 存入選手成績（冠亞季軍）</button>
       </div>
     </section>
     <section class="card">
@@ -754,6 +749,7 @@ function openPlayerProfile(id) {
       <h2>${esc(p.name)}</h2>
       <p class="profile-unit">${esc(prof.unit || '（未填單位）')}</p>
       <p>${titleChip(prof.title)} <span class="ttl plain">${esc(team?.name || '')}</span></p>
+      ${resultsHtml(state.results[p.name])}
       <h3 class="profile-h">出賽紀錄（已公布的排點）</h3>
       ${appearances.length ? `<ul class="profile-matches">${appearances.map((a) => `<li class="live"><span>第 ${a.round} 輪 vs ${esc(a.opp)}</span><b>${esc(a.labels)}</b><em></em></li>`).join('')}</ul>` : '<p class="note">還沒有公布的出賽紀錄。</p>'}
     </div>`,
@@ -951,19 +947,52 @@ const exportCtx = () => ({
   statusLabel,
 });
 
-function parseBulkTeams(text) {
-  const rows = [];
-  const skipped = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    const m = line.match(/^([^:：]+)[:：](.*)$/);
-    const name = (m ? m[1] : line).trim();
-    const players = m ? m[2].split(/[,，、\s]+/).map((s) => s.trim()).filter(Boolean) : [];
-    if (!name || name.length > 10 || players.some((p) => p.length > 20)) skipped.push(line);
-    else rows.push({ name, players: [...new Set(players)] });
+// 把冠、亞、季軍隊伍的所有隊員存入選手資料庫的「歷年成績」（同一年度重存會取代舊的）
+function saveResults() {
+  if (!state.matches.length) return toast('還沒有比賽', 'error');
+  if (state.matches.some((m) => m.status !== 'completed')) return toast('還有比賽沒打完，全部完賽後才能存入成績', 'error');
+  const top = standings().filter((s) => s.rank <= 3);
+  if (top.some((s) => s.drawTied && s.team.draw_rank == null)) return toast('有戰績相同的隊伍，請先在積分排名抽籤', 'error');
+  const list = top.map((s) => `${PLACE_LABEL[s.rank]}：${s.team.name}（${playersOf(s.team.id).length} 人）`).join('\n');
+  const rows = top.flatMap((s) => playersOf(s.team.id).map((p) => ({ name: p.name, place: s.rank, detail: s.team.name })));
+  openSaveResultsDialog({
+    openModal,
+    summary: `團體賽\n${list}\n\n每位隊員都會記錄這個名次（共 ${rows.length} 位）。`,
+    onConfirm: ({ year, event }) => run(() => backend.saveResults('team', '', year, event, rows), `已存入「${event}」冠亞季軍（${rows.length} 位選手）`),
+  });
+}
+
+// 從選手資料庫勾選這支隊伍的隊員：新勾的加入，取消勾選的移除；已在其他隊的選手不能重複選
+function pickMembers(teamId) {
+  const team = teamById(teamId);
+  if (!team) return;
+  const members = playersOf(teamId);
+  const disabled = {};
+  for (const p of state.players) {
+    if (p.team_id !== teamId) disabled[p.name] = `已在${teamName(p.team_id)}`;
   }
-  return { rows, skipped };
+  openPeoplePicker({
+    openModal,
+    people: state.people,
+    extra: members.map((p) => p.name),
+    selected: members.map((p) => p.name),
+    disabled,
+    title: `挑選「${team.name}」的隊員`,
+    hint: '勾選要加入這支隊伍的選手；取消勾選會把他從隊員名單移除。每位選手只能加入一支隊伍。',
+    onConfirm: async (picked) => {
+      const have = new Set(members.map((p) => p.name));
+      const add = picked.filter((n) => !have.has(n));
+      const drop = members.filter((p) => !picked.includes(p.name));
+      if (!add.length && !drop.length) return true;
+      if (add.some((n) => n.length > 20)) { toast('姓名超過 20 字，無法加入隊伍', 'error'); return false; }
+      const warn = state.matches.length ? '若已排入鎖定的排點，該位置會顯示為「已刪除」。' : '';
+      if (drop.length && !confirm(`將從隊伍移除：${drop.map((p) => p.name).join('、')}。${warn}確定嗎？`)) return false;
+      return run(async () => {
+        if (add.length) await backend.adminAddPlayers(add.map((name) => ({ team_id: teamId, name })));
+        for (const p of drop) await backend.adminRemovePlayer(p.id);
+      }, '隊員名單已更新');
+    },
+  });
 }
 
 const actions = {
@@ -1039,6 +1068,8 @@ const actions = {
     if (!confirm(`確定刪除「${teamName(m.team_a_id)} vs ${teamName(m.team_b_id)}」？兩隊的排點與比分會一併刪除。`)) return;
     run(() => backend.adminDeleteMatch(id), '已刪除對戰');
   },
+  'pick-members': ({ id }) => pickMembers(id),
+  'save-results': saveResults,
   'admin-remove-player': ({ id }) => {
     if (!confirm(`確定刪除隊員「${playerName(id)}」？若已排入鎖定的排點，該位置會顯示為「已刪除」。`)) return;
     run(() => backend.adminRemovePlayer(id), '已刪除隊員');
@@ -1137,31 +1168,6 @@ app.addEventListener('submit', async (e) => {
       const res = await backend.adminCreateTeam(form.name.value.trim(), form.code.value.trim());
       toast(`已新增隊伍，密碼：${res.passcode}`, 'ok');
     });
-  } else if (kind === 'bulk-teams') {
-    const { rows, skipped } = parseBulkTeams(form.text.value);
-    if (!rows.length) return toast(skipped.length ? `看不懂這些行：${skipped.slice(0, 3).join('｜')}` : '請先貼上名單', 'error');
-    let created = 0;
-    let added = 0;
-    const ok = await run(async () => {
-      for (const row of rows) {
-        let team = state.teams.find((t) => t.name === row.name);
-        if (!team) {
-          const res = await backend.adminCreateTeam(row.name, '');
-          team = { id: res.id, name: row.name };
-          created++;
-        }
-        const existing = new Set(playersOf(team.id).map((p) => p.name));
-        const fresh = row.players.filter((p) => !existing.has(p)).map((name) => ({ team_id: team.id, name }));
-        if (fresh.length) {
-          await backend.adminAddPlayers(fresh);
-          added += fresh.length;
-        }
-      }
-    });
-    if (ok) toast(`新增 ${created} 隊、${added} 位隊員${skipped.length ? `，略過 ${skipped.length} 行` : ''}`, 'ok');
-  } else if (kind === 'admin-add-player') {
-    const name = form.name.value.trim();
-    await run(() => backend.adminAddPlayers([{ team_id: form.dataset.team, name }]), `已新增 ${name}`);
   } else if (kind === 'add-match') {
     const a = form.a.value;
     const b = form.b.value;

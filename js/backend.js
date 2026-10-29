@@ -1,5 +1,5 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY, ORGANIZER_EMAIL } from './config.js';
-import { peopleApi, demoPeopleApi } from './people.js';
+import { peopleApi, demoPeopleApi, resultsApi, demoResultsApi } from './people.js';
 import { validateLineup, minPlayersFor, systemOf } from './rules.js';
 
 export const DEFAULT_SETTINGS = { id: 1, title: '桌球團體賽排點系統', match_system: 5, games_per_point: 5, min_players_3: 6, min_players_5: 7 };
@@ -30,6 +30,7 @@ async function createSupabaseBackend() {
   const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const people = peopleApi(sb);
+  const results = resultsApi(sb);
 
   const check = ({ data, error }) => {
     if (error) throw friendlyError(error);
@@ -51,13 +52,14 @@ async function createSupabaseBackend() {
 
   return {
     async load() {
-      const [settings, teams, players, matches, lineups, peopleMap] = await Promise.all([
+      const [settings, teams, players, matches, lineups, peopleMap, resultsMap] = await Promise.all([
         sb.from('tl_settings').select('*').eq('id', 1).maybeSingle(),
         sb.from('tl_teams').select('*').order('created_at').order('name'),
         sb.from('tl_players').select('*').order('created_at').order('name'),
         sb.from('tl_matches').select('*').order('round').order('seq'),
         sb.rpc('tl_public_lineups'),
         people.load(),
+        results.load(),
       ]);
       return {
         settings: check(settings) || { ...DEFAULT_SETTINGS },
@@ -66,6 +68,7 @@ async function createSupabaseBackend() {
         matches: check(matches),
         lineups: check(lineups),
         people: peopleMap,
+        results: resultsMap,
       };
     },
     subscribe(onChange, onStatus = () => {}) {
@@ -144,6 +147,7 @@ async function createSupabaseBackend() {
     async adminDeleteMatch(id) {
       mustAffect(await sb.from('tl_matches').delete().eq('id', id).select());
     },
+    async saveResults(system, division, year, event, rows) { await results.replace(system, division, year, event, rows); },
     async adminWipe() {
       await this.adminUpdateSettings({});
       check(await sb.from('tl_matches').delete().not('id', 'is', null));
@@ -162,6 +166,10 @@ function createDemoBackend() {
   const db = { settings: { ...DEFAULT_SETTINGS }, teams: [], secrets: {}, players: [], matches: [], lineups: [] };
   const DEMO_PASSWORD = 'demo1234';
   const peopleDemo = demoPeopleApi();
+  const resultsDemo = demoResultsApi([
+    { name: '陳志明', year: 2025, system: 'team', division: '', place: 2, detail: '東區鐵人' },
+    { name: '蔡明哲', year: 2025, system: 'team', division: '', place: 1, detail: '西區旋風' },
+  ]);
 
   const sample = [
     ['東區鐵人', '1111', ['陳志明', '林建宏', '黃俊傑', '張家豪', '李承翰', '王冠宇', '吳宗憲', '劉育成']],
@@ -180,6 +188,8 @@ function createDemoBackend() {
     });
   });
 
+  // 選手資料庫裡還沒加入任何隊伍的選手（示範：可以挑來加入隊伍）
+  ['許文彬', '楊佩珊', '郭子軒', '謝欣妤'].forEach((n) => { demoSeed[n] = { name: n, unit: '示範單位', title: '選手', photo_url: null }; });
   Promise.all(Object.entries(demoSeed).map(([n, p]) => peopleDemo.save(n, p)));
   let user = (() => { try { return sessionStorage.getItem('demo_organizer') ? { email: ORGANIZER_EMAIL } : null; } catch { return null; } })(); // 示範模式：同一個分頁切換系統時保留主辦登入
   const dataListeners = new Set();
@@ -203,6 +213,7 @@ function createDemoBackend() {
       return {
         settings: clone(db.settings),
         people: await peopleDemo.load(),
+        results: await resultsDemo.load(),
         teams: clone(db.teams),
         players: clone(db.players),
         matches: clone(visible),
@@ -349,6 +360,7 @@ function createDemoBackend() {
       db.lineups = db.lineups.filter((l) => l.match_id !== id);
       emit();
     },
+    async saveResults(system, division, year, event, rows) { requireOrganizer(); await resultsDemo.replace(system, division, year, event, rows); emit(); },
     async adminWipe() {
       requireOrganizer();
       Object.assign(db, { teams: [], secrets: {}, players: [], matches: [], lineups: [] });
