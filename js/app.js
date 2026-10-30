@@ -1,8 +1,8 @@
 import { ORGANIZER_EMAIL } from './config.js';
-import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261029o';
+import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261030h';
 import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js?v=20261029p';
 import { exportExcel, lineReport } from './export.js';
-import { avatar, titleChip, profileOf, openPeoplePicker, resultsHtml, PLACE_LABEL, openSaveResultsDialog } from './people.js';
+import { avatar, titleChip, profileOf, openPeoplePicker, resultsHtml, PLACE_LABEL, openSaveResultsDialog } from './people.js?v=20261030h';
 
 const VIEWS = { board: '對戰看板', players: '參賽選手', team: '各隊排點', admin: '主辦管理' };
 const ADMIN_TABS = { matches: '對戰與比分', teams: '隊伍與選手', settings: '設定與匯出' };
@@ -981,8 +981,55 @@ function saveResults() {
   openSaveResultsDialog({
     openModal,
     summary: `團體賽\n${list}\n\n每位隊員都會記錄這個名次（共 ${rows.length} 位）。`,
-    onConfirm: ({ year, event }) => run(() => backend.saveResults('team', '', year, event, rows), `已存入「${event}」冠亞季軍（${rows.length} 位選手）`),
+    onConfirm: async ({ year, event }) => {
+      let archived = true;
+      const ok = await run(async () => {
+        const res = await backend.saveResults('team', '', year, event, rows, archiveSnapshot());
+        archived = res?.archived !== false;
+      });
+      if (ok) toast(archived ? `已存入「${event}」冠亞季軍（${rows.length} 位選手），並封存完整結果` : '成績已存入，但完整結果沒有封存成功（請主辦在 Supabase 執行 supabase/archive.sql）', archived ? 'ok' : 'error');
+      return ok;
+    },
   });
+}
+
+// 賽事封存：積分排名與每場對戰（含各點出賽選手與比分），整理成英雄榜可以直接顯示的格式
+function archiveSnapshot() {
+  const rows = standings();
+  return {
+    formatLabel: `團體賽單循環・${systemOf(state.settings.match_system).label}`,
+    placings: rows.filter((s) => s.rank <= 3).map((s) => ({ place: s.rank, name: s.team.name })),
+    tables: [
+      {
+        title: '積分排名',
+        head: ['名次', '隊伍', '積分', '勝', '敗', '點數', '局數', '得失分', '判定依據'],
+        rows: rows.map((s) => [s.rank, s.team.name, s.score, s.wins, s.losses, `${s.rubbersWon}:${s.rubbersLost}`, `${s.gamesWon}:${s.gamesLost}`, `${s.pointsWon}:${s.pointsLost}`, s.basis]),
+      },
+      {
+        title: '隊伍名單',
+        head: ['隊伍', '隊員'],
+        rows: state.teams.map((t) => [t.name, playersOf(t.id).map((p) => p.name).join('、')]),
+      },
+    ],
+    matches: sortMatches(state.matches).filter((m) => m.status !== 'scheduled').map((m) => {
+      const r = matchResult(m);
+      const la = lineupOf(m.id, m.team_a_id);
+      const lb = lineupOf(m.id, m.team_b_id);
+      return {
+        stage: '循環賽',
+        round: `第 ${m.round} 輪`,
+        p1: teamName(m.team_a_id),
+        p2: teamName(m.team_b_id),
+        score: `${r.a} : ${r.b}`,
+        games: '',
+        winner: r.winner === 1 ? teamName(m.team_a_id) : r.winner === 2 ? teamName(m.team_b_id) : '',
+        lines: r.points.filter((pt) => pt.games.length).map((pt) => {
+          const who = (l) => (l ? playerNames(l[pt.key]) : '');
+          return `${pt.label}（${pt.type}）${who(la)} vs ${who(lb)}：${pt.a}:${pt.b}（${pt.games.map((g) => `${g[0]}:${g[1]}`).join('、')}）`;
+        }),
+      };
+    }),
+  };
 }
 
 // 從選手資料庫勾選這支隊伍的隊員：新勾的加入，取消勾選的移除；已在其他隊的選手不能重複選

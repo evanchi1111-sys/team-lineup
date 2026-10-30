@@ -1,5 +1,5 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY, ORGANIZER_EMAIL } from './config.js';
-import { peopleApi, demoPeopleApi, resultsApi, demoResultsApi } from './people.js';
+import { peopleApi, demoPeopleApi, resultsApi, demoResultsApi, archiveApi, demoArchiveApi } from './people.js?v=20261030h';
 import { validateLineup, minPlayersFor, systemOf } from './rules.js';
 
 export const DEFAULT_SETTINGS = { id: 1, title: '桌球團體賽排點系統', match_system: 5, games_per_point: 5, min_players_3: 6, min_players_5: 7 };
@@ -31,6 +31,7 @@ async function createSupabaseBackend() {
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const people = peopleApi(sb);
   const results = resultsApi(sb);
+  const archive = archiveApi(sb);
 
   const check = ({ data, error }) => {
     if (error) throw friendlyError(error);
@@ -147,7 +148,12 @@ async function createSupabaseBackend() {
     async adminDeleteMatch(id) {
       mustAffect(await sb.from('tl_matches').delete().eq('id', id).select());
     },
-    async saveResults(system, division, year, event, rows) { await results.replace(system, division, year, event, rows); },
+    // 成績存入後再封存完整結果；封存失敗（例如還沒建立資料表）不影響成績，回傳 archived: false 讓畫面提醒
+    async saveResults(system, division, year, event, rows, snapshot) {
+      await results.replace(system, division, year, event, rows);
+      if (!snapshot) return { archived: false };
+      try { await archive.replace(system, division, year, event, snapshot); return { archived: true }; } catch { return { archived: false }; }
+    },
     async adminWipe() {
       await this.adminUpdateSettings({});
       check(await sb.from('tl_matches').delete().not('id', 'is', null));
@@ -166,6 +172,7 @@ function createDemoBackend() {
   const db = { settings: { ...DEFAULT_SETTINGS }, teams: [], secrets: {}, players: [], matches: [], lineups: [] };
   const DEMO_PASSWORD = 'demo1234';
   const peopleDemo = demoPeopleApi();
+  const archiveDemo = demoArchiveApi();
   const resultsDemo = demoResultsApi([
     { name: '陳志明', year: 2025, system: 'team', division: '', place: 2, detail: '東區鐵人' },
     { name: '蔡明哲', year: 2025, system: 'team', division: '', place: 1, detail: '西區旋風' },
@@ -360,7 +367,7 @@ function createDemoBackend() {
       db.lineups = db.lineups.filter((l) => l.match_id !== id);
       emit();
     },
-    async saveResults(system, division, year, event, rows) { requireOrganizer(); await resultsDemo.replace(system, division, year, event, rows); emit(); },
+    async saveResults(system, division, year, event, rows, snapshot) { requireOrganizer(); await resultsDemo.replace(system, division, year, event, rows); if (snapshot) await archiveDemo.replace(system, division, year, event, snapshot); emit(); return { archived: !!snapshot }; },
     async adminWipe() {
       requireOrganizer();
       Object.assign(db, { teams: [], secrets: {}, players: [], matches: [], lineups: [] });
