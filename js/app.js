@@ -157,6 +157,9 @@ app.addEventListener('focusout', () => {
 // 網站標題前面固定加上公司名；主辦若已在標題裡寫了「中龍鋼鐵」就不重複加
 const siteTitle = () => (state.settings.title.includes("中龍鋼鐵") ? state.settings.title : `中龍鋼鐵 ${state.settings.title}`);
 
+// 英雄榜（公開頁面，所有人都能看）：正式環境在選手資料庫網站底下；本機測試連到 8769 埠
+const hallHref = () => (['localhost', '127.0.0.1'].includes(location.hostname) ? 'http://localhost:8769/hall.html' : '/players/hall.html') + (demo ? '?demo' : '');
+
 function renderHeader() {
   return `
     <header class="topbar">
@@ -172,6 +175,7 @@ function renderHeader() {
             }
           </div>
         </div>
+        <div class="who"><a class="hall-chip" href="${hallHref()}">🏆 英雄榜</a></div>
       </div>
       <nav class="container viewtabs" aria-label="功能">
         ${Object.entries(VIEWS)

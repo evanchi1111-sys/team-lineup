@@ -209,3 +209,15 @@ button.pod { cursor: pointer; }
 .pod-count { font-size: 11px; color: var(--sub, #666464); font-weight: 700; }
 .podium-roster { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 55vh; overflow-y: auto; }
 .podium-roster li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 14px; background: #f3f7fb; }
+
+/* 英雄榜入口（所有人可見） */
+.hall-strip { display: flex; justify-content: flex-end; padding-bottom: 10px; }
+.hall-strip a { color: #fff; font-weight: 800; font-size: 13px; text-decoration: none; background: rgba(255, 255, 255, .2); padding: 5px 14px; border-radius: 999px; }
+.hall-strip a:hover { background: rgba(255, 255, 255, .32); }
+.hall-strip a:focus-visible { outline: 3px solid #FBCE00; outline-offset: 2px; }
+
+/* 英雄榜入口改放在標題旁（取代下方一行小按鈕） */
+.hall-chip { color: #fff; font-weight: 800; font-size: 13px; text-decoration: none; background: rgba(255, 255, 255, .22); padding: 6px 13px; border-radius: 999px; white-space: nowrap; }
+.hall-chip:hover { background: rgba(255, 255, 255, .34); }
+.hall-chip:focus-visible { outline: 3px solid #FBCE00; outline-offset: 2px; }
+.hall-strip { display: none; }
