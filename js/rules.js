@@ -71,6 +71,14 @@ export function pointResult(games, gamesPerPoint) {
 // 整場結果：依點數順序累計，先拿到過半點數者勝
 export function matchResult(match) {
   const sys = systemOf(match.match_system);
+  // 棄權：scores 記成 { _wo: 1|2 }（1 = A 隊棄權、2 = B 隊棄權），對手直接獲勝；只算勝負，不計點數、局數與得失分
+  const wo = Number(match.scores?._wo) || 0;
+  if (wo === 1 || wo === 2) {
+    return {
+      a: wo === 2 ? sys.winPoints : 0, b: wo === 1 ? sys.winPoints : 0, winner: wo === 1 ? 2 : 1, walkover: wo,
+      points: sys.points.map((pt) => ({ ...pt, games: [], a: 0, b: 0, winner: 0 })), status: 'completed',
+    };
+  }
   let a = 0;
   let b = 0;
   let played = false;

@@ -15,13 +15,13 @@ export function exportExcel(ctx) {
     const b = ctx.teamName(m.team_b_id);
     summary.push({
       輪次: `第 ${m.round} 輪`, 隊伍A: a, 隊伍B: b,
-      點數比分: m.status === 'scheduled' ? '' : `${r.a} : ${r.b}`,
+      點數比分: m.status === 'scheduled' ? '' : r.walkover ? '棄權勝' : `${r.a} : ${r.b}`,
       勝方: r.winner ? (r.winner === 1 ? a : b) : '', 狀態: ctx.statusLabel(m), 備註: m.notes || '',
     });
     const la = ctx.lineupOf(m.id, m.team_a_id);
     const lb = ctx.lineupOf(m.id, m.team_b_id);
     for (const pt of r.points) {
-      if (!pt.games.length && !la && !lb) continue;
+      if (r.walkover || (!pt.games.length && !la && !lb)) continue;
       detail.push({
         輪次: `第 ${m.round} 輪`, 對戰: `${a} vs ${b}`, 點次: `${pt.label}（${pt.type}）`,
         A隊出賽: la ? ctx.playerNames(la[pt.key]) : '',
@@ -68,6 +68,7 @@ export function lineReport(ctx) {
         lines.push(`${a} vs ${b}（未開始）`);
         continue;
       }
+      if (r.walkover) { lines.push(`${a} vs ${b}　${r.walkover === 1 ? a : b} 棄權，🏆 ${r.walkover === 1 ? b : a} 直接獲勝`); continue; }
       lines.push(`${a} ${r.a} : ${r.b} ${b}${r.winner ? `　🏆 ${r.winner === 1 ? a : b}` : '（進行中）'}`);
       const la = ctx.lineupOf(m.id, m.team_a_id);
       const lb = ctx.lineupOf(m.id, m.team_b_id);

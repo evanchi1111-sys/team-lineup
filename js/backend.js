@@ -1,5 +1,5 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY, ORGANIZER_EMAIL } from './config.js';
-import { peopleApi, demoPeopleApi, resultsApi, demoResultsApi, archiveApi, demoArchiveApi } from './people.js?v=20261030h';
+import { peopleApi, demoPeopleApi, resultsApi, demoResultsApi, archiveApi, demoArchiveApi } from './people.js?v=20261030i';
 import { validateLineup, minPlayersFor, systemOf } from './rules.js';
 
 export const DEFAULT_SETTINGS = { id: 1, title: '桌球團體賽排點系統', match_system: 5, games_per_point: 5, min_players_3: 6, min_players_5: 7 };

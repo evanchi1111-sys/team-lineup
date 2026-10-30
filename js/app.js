@@ -1,8 +1,8 @@
 import { ORGANIZER_EMAIL } from './config.js';
 import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20261030h';
-import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js?v=20261029p';
-import { exportExcel, lineReport } from './export.js';
-import { avatar, titleChip, profileOf, openPeoplePicker, resultsHtml, PLACE_LABEL, openSaveResultsDialog } from './people.js?v=20261030h';
+import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js?v=20261030i';
+import { exportExcel, lineReport } from './export.js?v=20261030i';
+import { avatar, titleChip, profileOf, openPeoplePicker, resultsHtml, PLACE_LABEL, openSaveResultsDialog, staleSaved, staleNoteHtml } from './people.js?v=20261030i';
 
 const VIEWS = { board: '對戰看板', players: '參賽選手', team: '各隊排點', admin: '主辦管理' };
 const ADMIN_TABS = { matches: '對戰與比分', teams: '隊伍與選手', settings: '設定與匯出' };
@@ -188,6 +188,10 @@ const emptyState = (text) => `<div class="empty"><span aria-hidden="true">🏓</
 // 一場對戰的各點明細：出賽選手（雙方鎖定後）＋各局比分
 function pointTable(m) {
   const r = matchResult(m);
+  if (r.walkover) {
+    const [out, win] = r.walkover === 1 ? [m.team_a_id, m.team_b_id] : [m.team_b_id, m.team_a_id];
+    return `<div class="points"><p class="note center">⚠️ ${esc(teamName(out))} 棄權，${esc(teamName(win))} 直接獲勝</p></div>`;
+  }
   const show = revealed(m);
   const la = show ? lineupOf(m.id, m.team_a_id) : null;
   const lb = show ? lineupOf(m.id, m.team_b_id) : null;
@@ -231,7 +235,7 @@ function matchHeader(m, mine) {
     </div>
     <div class="vs-row">
       ${side(m.team_a_id, m.a_locked, r.winner === 1)}
-      <div class="big-score">${m.status === 'scheduled' ? 'vs' : `${r.a}<span>:</span>${r.b}`}</div>
+      <div class="big-score">${m.status === 'scheduled' ? 'vs' : r.walkover ? '<span>棄權勝</span>' : `${r.a}<span>:</span>${r.b}`}</div>
       ${side(m.team_b_id, m.b_locked, r.winner === 2)}
     </div>
     ${m.notes ? `<p class="match-notes">📝 ${esc(m.notes)}</p>` : ''}`;
@@ -270,7 +274,13 @@ function renderStandings(mine) {
   const org = isOrganizer();
   const needDraw = rows.some((s) => s.drawTied && s.drawBad);
   const medal = (s) => (s.played && s.rank <= 3 ? ['🥇', '🥈', '🥉'][s.rank - 1] : s.rank);
+  // 主辦專用：全部完賽後，已存入的成績和目前名次不一樣時提醒重新存入（比分存入後又被修改）
+  const top3 = rows.filter((s) => s.rank <= 3);
+  const stale = org && state.matches.length && state.matches.every((m) => m.status === 'completed') && !top3.some((s) => s.drawTied && s.drawBad)
+    ? staleNoteHtml(staleSaved(state.results, 'team', '', top3.flatMap((s) => playersOf(s.team.id).map((p) => ({ name: p.name, place: s.rank })))))
+    : '';
   return `
+    ${stale}
     ${needDraw && org ? `<div class="banner warn">有隊伍戰績完全相同，請由主辦單位現場抽籤，再在「抽籤」欄填入順位（1～同分隊數，不可重複）。</div>` : ''}
     ${podiumHtml(rows, mine)}
     <div class="table-wrap">
@@ -695,6 +705,7 @@ function renderAdminSettings() {
         <button class="btn" data-action="copy-report">複製 LINE 戰報</button>
         <button class="btn" data-action="copy-link">複製網站網址</button>
         <button class="btn primary" data-action="save-results" ${busy}>🏅 存入選手成績（冠亞季軍）</button>
+        <button class="btn" data-action="team-withdraw" ${busy}>🚪 隊伍退賽（棄權）</button>
       </div>
     </section>
     <section class="card">
@@ -810,7 +821,11 @@ function openScoreModal(match) {
          </section>`).join('')}
      </div>
      <label>備註<input name="notes" maxlength="100" value="${esc(match.notes || '')}"></label>
-     <p class="score-result"></p>
+     <p class="score-result">${match.scores?._wo ? `目前判定：<b>${esc(Number(match.scores._wo) === 1 ? nameA : nameB)}</b> 棄權，${esc(Number(match.scores._wo) === 1 ? nameB : nameA)} 直接獲勝。` : ''}</p>
+     <div class="modal-actions wo-actions">
+       <button type="button" class="btn" data-wo="1">${esc(nameA)} 棄權</button>
+       <button type="button" class="btn" data-wo="2">${esc(nameB)} 棄權</button>
+     </div>
      <div class="modal-actions">
        <button type="button" class="btn" data-clear>清除比分</button>
        <button type="button" class="btn" data-close>取消</button>
@@ -881,7 +896,8 @@ function openScoreModal(match) {
         modal.querySelector('.score-total').textContent = `${ev.a} : ${ev.b}`;
         modal.querySelector('.score-result').innerHTML = ev.winner
           ? `🏆 勝方：<b>${esc(ev.winner === 1 ? nameA : nameB)}</b>`
-          : Object.keys(ev.scores).length ? '比賽進行中，可先儲存目前比分。' : '';
+          : Object.keys(ev.scores).length ? '比賽進行中，可先儲存目前比分。'
+          : match.scores?._wo ? `目前判定：<b>${esc(Number(match.scores._wo) === 1 ? nameA : nameB)}</b> 棄權，${esc(Number(match.scores._wo) === 1 ? nameB : nameA)} 直接獲勝。` : '';
       };
       modal.querySelector('.score-points').addEventListener('input', draw);
       modal.querySelector('.score-points').addEventListener('keydown', (e) => {
@@ -910,6 +926,12 @@ function openScoreModal(match) {
         close();
         await run(() => backend.adminUpdateMatch(match.id, patch), '比分已儲存');
       });
+      // 棄權：對手直接獲勝，只算勝負，不計點數、局數與得失分
+      modal.querySelectorAll('[data-wo]').forEach((btn) => btn.addEventListener('click', async () => {
+        const side = Number(btn.dataset.wo);
+        close();
+        await run(() => backend.adminUpdateMatch(match.id, { scores: { _wo: side }, status: 'completed', winner_id: side === 1 ? match.team_b_id : match.team_a_id, notes: modal.querySelector('[name=notes]').value.trim() }), '已判定棄權');
+      }));
       draw();
       const first = [...modal.querySelectorAll('.sp:not([hidden]) .game-row:not([hidden]) .pt-input')].find((el) => el.value === '');
       first?.focus();
@@ -1020,12 +1042,12 @@ function archiveSnapshot() {
         round: `第 ${m.round} 輪`,
         p1: teamName(m.team_a_id),
         p2: teamName(m.team_b_id),
-        score: `${r.a} : ${r.b}`,
-        games: '',
+        score: r.walkover ? '棄權勝' : `${r.a} : ${r.b}`,
+        games: r.walkover ? '棄權' : '',
         winner: r.winner === 1 ? teamName(m.team_a_id) : r.winner === 2 ? teamName(m.team_b_id) : '',
         lines: r.points.filter((pt) => pt.games.length).map((pt) => {
-          const who = (l) => (l ? playerNames(l[pt.key]) : '');
-          return `${pt.label}（${pt.type}）${who(la)} vs ${who(lb)}：${pt.a}:${pt.b}（${pt.games.map((g) => `${g[0]}:${g[1]}`).join('、')}）`;
+          const who = playerNames(la?.[pt.key]) && playerNames(lb?.[pt.key]) ? `${playerNames(la[pt.key])} vs ${playerNames(lb[pt.key])}` : '';
+          return `${pt.label}（${pt.type}）${who ? `${who}：` : ''}${pt.a}:${pt.b}（${pt.games.map((g) => `${g[0]}:${g[1]}`).join('、')}）`;
         }),
       };
     }),
@@ -1140,6 +1162,31 @@ const actions = {
   },
   'pick-members': ({ id }) => pickMembers(id),
   'save-results': saveResults,
+  // 隊伍退賽：這隊還沒打完的對戰，全部判對手直接獲勝（已打完的比分保留）
+  'team-withdraw': () => {
+    openModal(
+      `<h2>隊伍退賽</h2>
+       <p class="note">隊伍臨時離場時使用：這隊還沒打完的對戰會判對手直接獲勝（棄權只計勝負，不計點數、局數與得失分）；已打完的比分會保留。之後也可以在單場比分視窗按「棄權」。</p>
+       <label>退賽的隊伍<select name="team">${state.teams.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label>
+       <p class="error" hidden></p>
+       <div class="modal-actions"><button type="button" class="btn" data-close>取消</button><button type="button" class="btn danger" data-go>判定退賽</button></div>`,
+      (modal, close) => {
+        modal.querySelector('[data-go]').addEventListener('click', async () => {
+          const id = modal.querySelector('[name="team"]').value;
+          const todo = state.matches.filter((m) => m.status !== 'completed' && (m.team_a_id === id || m.team_b_id === id));
+          const err = modal.querySelector('.error');
+          if (!todo.length) { err.textContent = '這隊沒有待打的對戰。'; err.hidden = false; return; }
+          close();
+          await run(async () => {
+            for (const m of todo) {
+              const side = m.team_a_id === id ? 1 : 2;
+              await backend.adminUpdateMatch(m.id, { scores: { _wo: side }, status: 'completed', winner_id: side === 1 ? m.team_b_id : m.team_a_id });
+            }
+          }, `已判定 ${teamName(id)} 退賽（${todo.length} 場）`);
+        });
+      }
+    );
+  },
   'admin-remove-player': ({ id }) => {
     if (!confirm(`確定刪除隊員「${playerName(id)}」？若已排入鎖定的排點，該位置會顯示為「已刪除」。`)) return;
     run(() => backend.adminRemovePlayer(id), '已刪除隊員');
