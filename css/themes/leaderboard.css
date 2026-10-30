@@ -203,3 +203,9 @@ button.pod { cursor: pointer; }
 .pod.mine .pod-name, .pod.mine .xp { background: var(--mine, #fff4bf); }
 .r1 { background: #FBCE00; color: #231F20; } .r2 { background: #666464; } .r3 { background: #3071B9; }
 .pod-unit { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pod-members { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; margin-top: 4px; max-width: 100%; }
+.pod-members .av.xs { width: 18px; height: 18px; font-size: 7px; box-shadow: 0 0 0 1px #fff; }
+.pod-more { font-size: 10px; font-weight: 800; color: var(--sub, #666464); align-self: center; padding-left: 2px; }
+.pod-count { font-size: 11px; color: var(--sub, #666464); font-weight: 700; }
+.podium-roster { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 55vh; overflow-y: auto; }
+.podium-roster li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 14px; background: #f3f7fb; }

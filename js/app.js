@@ -254,16 +254,20 @@ function podiumHtml(rows, mine) {
     <div class="podium">
       ${[1, 0, 2].map((i) => {
         const s = top[i];
-        const members = playersOf(s.team.id).slice(0, 4);
+        const all = playersOf(s.team.id);
+        const members = all.slice(0, 4);
         const photos = members.length
           ? members.map((p) => avatar(profileOfPlayer(p), 'cover')).join('')
           : `<span class="av cover">${esc(s.team.name.slice(0, 2))}</span>`;
+        // 拼貼只放前 4 位；其餘隊員用一排小頭像補上（最多 8 位，超過顯示「+N」），點卡片可以看全部隊員
+        const row = all.slice(0, 8).map((p) => avatar(profileOfPlayer(p), 'xs')).join('') + (all.length > 8 ? `<span class="pod-more">+${all.length - 8}</span>` : '');
         return `
-          <div class="pod pod-${i + 1} ${s.team.id === mine ? 'mine' : ''}">
+          <button type="button" class="pod pod-${i + 1} ${s.team.id === mine ? 'mine' : ''}" data-action="team-podium" data-id="${s.team.id}" data-place="${s.rank}" aria-label="${esc(s.team.name)}，查看全部 ${all.length} 位隊員">
             <span class="pod-photo n${Math.max(1, members.length)}"><span class="rank-badge r${i + 1}">${i + 1}</span>${photos}</span>
             <span class="pod-name">${esc(s.team.name)}</span>
             <span class="xp">${s.wins} 勝 ${s.losses} 敗・${s.score} 分</span>
-          </div>`;
+            ${all.length ? `<span class="pod-members">${row}</span><span class="pod-count">${all.length} 位隊員 ›</span>` : ''}
+          </button>`;
       }).join('')}
     </div>`;
 }
@@ -1162,6 +1166,22 @@ const actions = {
   },
   'pick-members': ({ id }) => pickMembers(id),
   'save-results': saveResults,
+  // 頒獎台：點隊伍卡片，列出全部隊員（照片、姓名、單位、頭銜）
+  'team-podium': ({ id, place }) => {
+    const team = teamById(id);
+    if (!team) return;
+    const list = playersOf(id);
+    openModal(
+      `<h2>${PLACE_LABEL[place] ? `${esc(PLACE_LABEL[place])}・` : ''}${esc(team.name)}</h2>
+       <p class="note">共 ${list.length} 位隊員</p>
+       <ul class="podium-roster">${list.map((p) => {
+         const prof = profileOfPlayer(p);
+         return `<li>${avatar(prof, 'sm')}<span class="who-tx"><span class="team">${esc(p.name)}</span><small class="who-sub">${esc([prof.unit, prof.title].filter(Boolean).join(' · '))}</small></span></li>`;
+       }).join('') || '<li class="note">尚無隊員資料</li>'}</ul>
+       <div class="modal-actions"><button type="button" class="btn primary" data-close>關閉</button></div>`,
+      () => {}
+    );
+  },
   // 隊伍退賽：這隊還沒打完的對戰，全部判對手直接獲勝（已打完的比分保留）
   'team-withdraw': () => {
     openModal(
