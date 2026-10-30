@@ -242,6 +242,28 @@ function matchHeader(m, mine) {
 // 排名只計算已公布的對戰，主辦與選手看到的排名一致
 const standings = () => computeStandings(state.teams, state.matches.filter((m) => m.published));
 
+// 前三名頒獎台：用隊員照片拼成一張（最多 4 位）；前三名都已比過賽、且沒有未抽籤的同分時才顯示
+function podiumHtml(rows, mine) {
+  const top = rows.slice(0, 3);
+  if (top.length < 3 || top.some((s) => !s.played || (s.drawTied && s.drawBad))) return '';
+  return `
+    <div class="podium">
+      ${[1, 0, 2].map((i) => {
+        const s = top[i];
+        const members = playersOf(s.team.id).slice(0, 4);
+        const photos = members.length
+          ? members.map((p) => avatar(profileOfPlayer(p), 'cover')).join('')
+          : `<span class="av cover">${esc(s.team.name.slice(0, 2))}</span>`;
+        return `
+          <div class="pod pod-${i + 1} ${s.team.id === mine ? 'mine' : ''}">
+            <span class="pod-photo n${Math.max(1, members.length)}"><span class="rank-badge r${i + 1}">${i + 1}</span>${photos}</span>
+            <span class="pod-name">${esc(s.team.name)}</span>
+            <span class="xp">${s.wins} 勝 ${s.losses} 敗・${s.score} 分</span>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
 function renderStandings(mine) {
   const rows = standings();
   if (!rows.length) return emptyState('還沒有隊伍。');
@@ -250,6 +272,7 @@ function renderStandings(mine) {
   const medal = (s) => (s.played && s.rank <= 3 ? ['🥇', '🥈', '🥉'][s.rank - 1] : s.rank);
   return `
     ${needDraw && org ? `<div class="banner warn">有隊伍戰績完全相同，請由主辦單位現場抽籤，再在「抽籤」欄填入順位（1～同分隊數，不可重複）。</div>` : ''}
+    ${podiumHtml(rows, mine)}
     <div class="table-wrap">
       <table class="rank-table">
         <thead><tr>
