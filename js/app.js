@@ -713,7 +713,6 @@ function renderAdminSettings() {
         <button class="btn" data-action="copy-report">複製 LINE 戰報</button>
         <button class="btn" data-action="copy-link">複製網站網址</button>
         <button class="btn primary" data-action="save-results" ${busy}>🏅 存入選手成績（冠亞季軍）</button>
-        <button class="btn" data-action="team-withdraw" ${busy}>🚪 隊伍退賽（棄權）</button>
       </div>
     </section>
     <section class="card">
@@ -830,10 +829,6 @@ function openScoreModal(match) {
      </div>
      <label>備註<input name="notes" maxlength="100" value="${esc(match.notes || '')}"></label>
      <p class="score-result">${match.scores?._wo ? `目前判定：<b>${esc(Number(match.scores._wo) === 1 ? nameA : nameB)}</b> 棄權，${esc(Number(match.scores._wo) === 1 ? nameB : nameA)} 直接獲勝。` : ''}</p>
-     <div class="modal-actions wo-actions">
-       <button type="button" class="btn" data-wo="1">${esc(nameA)} 棄權</button>
-       <button type="button" class="btn" data-wo="2">${esc(nameB)} 棄權</button>
-     </div>
      <div class="modal-actions">
        <button type="button" class="btn" data-clear>清除比分</button>
        <button type="button" class="btn" data-close>取消</button>
@@ -934,12 +929,6 @@ function openScoreModal(match) {
         close();
         await run(() => backend.adminUpdateMatch(match.id, patch), '比分已儲存');
       });
-      // 棄權：對手直接獲勝，只算勝負，不計點數、局數與得失分
-      modal.querySelectorAll('[data-wo]').forEach((btn) => btn.addEventListener('click', async () => {
-        const side = Number(btn.dataset.wo);
-        close();
-        await run(() => backend.adminUpdateMatch(match.id, { scores: { _wo: side }, status: 'completed', winner_id: side === 1 ? match.team_b_id : match.team_a_id, notes: modal.querySelector('[name=notes]').value.trim() }), '已判定棄權');
-      }));
       draw();
       const first = [...modal.querySelectorAll('.sp:not([hidden]) .game-row:not([hidden]) .pt-input')].find((el) => el.value === '');
       first?.focus();
@@ -1184,31 +1173,6 @@ const actions = {
        }).join('') || '<li class="note">尚無隊員資料</li>'}</ul>
        <div class="modal-actions"><button type="button" class="btn primary" data-close>關閉</button></div>`,
       () => {}
-    );
-  },
-  // 隊伍退賽：這隊還沒打完的對戰，全部判對手直接獲勝（已打完的比分保留）
-  'team-withdraw': () => {
-    openModal(
-      `<h2>隊伍退賽</h2>
-       <p class="note">隊伍臨時離場時使用：這隊還沒打完的對戰會判對手直接獲勝（棄權只計勝負，不計點數、局數與得失分）；已打完的比分會保留。之後也可以在單場比分視窗按「棄權」。</p>
-       <label>退賽的隊伍<select name="team">${state.teams.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></label>
-       <p class="error" hidden></p>
-       <div class="modal-actions"><button type="button" class="btn" data-close>取消</button><button type="button" class="btn danger" data-go>判定退賽</button></div>`,
-      (modal, close) => {
-        modal.querySelector('[data-go]').addEventListener('click', async () => {
-          const id = modal.querySelector('[name="team"]').value;
-          const todo = state.matches.filter((m) => m.status !== 'completed' && (m.team_a_id === id || m.team_b_id === id));
-          const err = modal.querySelector('.error');
-          if (!todo.length) { err.textContent = '這隊沒有待打的對戰。'; err.hidden = false; return; }
-          close();
-          await run(async () => {
-            for (const m of todo) {
-              const side = m.team_a_id === id ? 1 : 2;
-              await backend.adminUpdateMatch(m.id, { scores: { _wo: side }, status: 'completed', winner_id: side === 1 ? m.team_b_id : m.team_a_id });
-            }
-          }, `已判定 ${teamName(id)} 退賽（${todo.length} 場）`);
-        });
-      }
     );
   },
   'admin-remove-player': ({ id }) => {
