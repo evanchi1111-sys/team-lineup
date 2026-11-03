@@ -3,7 +3,7 @@ import { createBackend, isConfigured, DEFAULT_SETTINGS } from './backend.js?v=20
 import { loadDesk, syncDesk, fillTables, assign as deskAssign, release as deskRelease, renderDesk } from './desk.js?v=20261103d';
 import { SYSTEMS, systemOf, gamesToWin, minPlayersFor, validateLineup, gameWinner, isStandardGame, pointResult, matchResult, roundRobin, computeStandings } from './rules.js?v=20261030i';
 import { exportExcel, lineReport } from './export.js?v=20261030i';
-import { avatar, titleChip, profileOf, openPeoplePicker, resultsHtml, PLACE_LABEL, openSaveResultsDialog, staleSaved, staleNoteHtml } from './people.js?v=20261030i';
+import { avatar, titleChip, profileOf, openPeoplePicker, resultsHtml, PLACE_LABEL, openSaveResultsDialog, staleSaved, staleNoteHtml, savedBatch, lockedNoteHtml } from './people.js?v=20261103a';
 
 const VIEWS = { board: '對戰看板', players: '參賽選手', team: '各隊排點', admin: '主辦管理' };
 const ADMIN_TABS = { matches: '對戰與比分', desk: '記分台', teams: '隊伍與選手', settings: '設定與匯出' };
@@ -592,6 +592,19 @@ function renderAdmin() {
     ${state.adminTab === 'settings' ? renderAdminSettings() : ''}`;
 }
 
+// 存入選手成績＝這次比賽已結束：存入的名次和目前名次相同時，比分、對戰、隊伍名單都鎖定
+const lockedBatch = () => {
+  if (!state.matches.length || state.matches.some((m) => m.status !== 'completed')) return null;
+  const top3 = standings().filter((s) => s.rank <= 3);
+  if (top3.some((s) => s.drawTied && s.drawBad)) return null;
+  return savedBatch(state.results, 'team', '', top3.flatMap((s) => playersOf(s.team.id).map((p) => ({ name: p.name, place: s.rank }))));
+};
+function guardLocked() {
+  const b = lockedBatch();
+  if (b) toast(`「${b.event || '這場比賽'}」的成績已存入，比賽已結束，不能再修改。如需修正，請先到「選手資料庫」撤銷這一批成績。`, 'error');
+  return !!b;
+}
+
 // ---------------------------------------------------------------- 記分台（球桌場地圖＋待賽清單）
 
 // 把所有對戰整理成記分台的「項目」；團體賽以「隊」為單位（整場對戰由兩隊上桌）
@@ -625,11 +638,15 @@ function renderDeskView() {
   });
 }
 
+let adminLocked = null;
 function renderAdminMatches() {
+  const locked = lockedBatch();
+  adminLocked = locked;
   const matches = sortMatches(state.matches);
   const busy = state.busy ? 'disabled' : '';
   const teamOptions = state.teams.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
   return `
+    ${locked ? lockedNoteHtml(locked) : ''}
     <section class="card">
       <div class="section-head"><h3>建立對戰</h3><span class="note">${systemOf(state.settings.match_system).label}・每點${state.settings.games_per_point === 3 ? '三局兩勝' : '五局三勝'}</span></div>
       <div class="actions">
@@ -659,11 +676,11 @@ function adminMatchCard(m) {
       ${matchHeader(m, '')}
       ${pointTable(m)}
       <div class="actions wrap">
-        <button class="btn primary small" data-action="score" data-id="${m.id}">登錄比分</button>
+        ${adminLocked ? '' : `<button class="btn primary small" data-action="score" data-id="${m.id}">登錄比分</button>`}
         <button class="btn small" data-action="toggle-publish" data-id="${m.id}" ${busy}>${m.published ? '👁️ 已公布（點此隱藏）' : '🙈 隱藏中（點此公布）'}</button>
         ${m.a_locked ? `<button class="btn small" data-action="admin-unlock" data-id="${m.id}" data-side="a" ${busy}>解除 ${esc(teamName(m.team_a_id))} 鎖定</button>` : ''}
         ${m.b_locked ? `<button class="btn small" data-action="admin-unlock" data-id="${m.id}" data-side="b" ${busy}>解除 ${esc(teamName(m.team_b_id))} 鎖定</button>` : ''}
-        <button class="btn small danger" data-action="delete-match" data-id="${m.id}" ${busy}>刪除</button>
+        ${adminLocked ? '' : `<button class="btn small danger" data-action="delete-match" data-id="${m.id}" ${busy}>刪除</button>`}
       </div>
     </article>`;
 }
@@ -750,7 +767,7 @@ function renderAdminSettings() {
         <button class="btn" data-action="export-excel">匯出 Excel</button>
         <button class="btn" data-action="copy-report">複製 LINE 戰報</button>
         <button class="btn" data-action="copy-link">複製網站網址</button>
-        <button class="btn primary" data-action="save-results" ${busy}>🏅 存入選手成績（冠亞季軍）</button>
+        ${lockedBatch() ? '<span class="chip ok">🔒 成績已存入</span>' : `<button class="btn primary" data-action="save-results" ${busy}>🏅 存入選手成績（冠亞季軍）</button>`}
       </div>
     </section>
     <section class="card">
@@ -836,6 +853,7 @@ function openPlayerProfile(id) {
 }
 
 function openScoreModal(match) {
+  if (guardLocked()) return;
   const sys = systemOf(match.match_system);
   const gpp = match.games_per_point;
   const need = gamesToWin(gpp);
@@ -1291,6 +1309,12 @@ const actions = {
   },
 };
 
+// 成績存入後鎖定：改比分、對戰、隊伍與選手一律擋下（畫面上的按鈕也已經隱藏，這裡是第二道保險）
+for (const key of ['generate', 'score', 'admin-unlock', 'delete-match', 'pick-members', 'admin-remove-player', 'rename-team', 'delete-team', 'team-remove-player', 'team-save-draft', 'team-lock', 'team-unlock', 'wipe', 'desk-score']) {
+  const fn = actions[key];
+  if (fn) actions[key] = (d, el) => (guardLocked() ? undefined : fn(d, el));
+}
+
 app.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
@@ -1334,6 +1358,7 @@ app.addEventListener('submit', async (e) => {
   if (!form) return;
   e.preventDefault();
   const kind = form.dataset.form;
+  if (['team-add-player', 'create-team', 'add-match', 'settings'].includes(kind) && guardLocked()) { e.preventDefault(); return; }
 
   if (kind === 'team-login') {
     const id = form.team.value;
